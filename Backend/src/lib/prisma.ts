@@ -1,4 +1,5 @@
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
+
 
 // Prevents multiple PrismaClient instances during dev (nodemon hot reload)
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
