@@ -10,7 +10,7 @@ import PaymentsPage from "./components/Tenant/PaymentsPage";
 import MessagesPage from "./components/Tenant/MessagesPage";
 import NotificationsPage from "./components/Tenant/NotificationsPage";
 import SettingsPage from "./components/Tenant/SettingsPage";
-import { LandlordDashboard } from "./components/Landlord/Landlorddashboard";
+import LandlordDashboard from "./components/Landlord/Landlorddashboard";
 import { AdminDashboard } from "./components/Admin/AdminDashboard";
 
 import type { TenantView } from "./components/Tenant/navigation";
