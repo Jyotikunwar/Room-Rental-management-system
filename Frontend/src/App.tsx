@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
-import { getUser, type User } from "./services/api";
-import { AuthModal } from "./components/AuthModal";
+import { useState } from "react";
+import { api, getUser, setToken, setUser as persistUser, type User } from "./services/api";
+
+import LandingPage from "./components/Landing/LandingPage";
+import LoginPage from "./components/Landing/LoginPage";
+import SignupPage from "./components/Landing/SignupPage";
+
 import TenantDashboard from "./components/Tenant/TenantDashboard";
 import FindProperty from "./components/Tenant/FindProperty";
 import SavedRooms from "./components/Tenant/SavedRooms";
@@ -16,50 +20,72 @@ import { AdminDashboard } from "./components/Admin/AdminDashboard";
 import type { TenantView } from "./components/Tenant/navigation";
 import "./App.css";
 
+// Screens shown before the person is logged in.
+type AuthView = "landing" | "login" | "signup";
+
 function App() {
   const [user, setUser] = useState<User | null>(getUser());
-  const [showAuth, setShowAuth] = useState(false);
+  const [authView, setAuthView] = useState<AuthView>("landing");
   const [tenantView, setTenantView] = useState<TenantView>("dashboard");
 
-  useEffect(() => {
-    if (!user) setShowAuth(true);
-  }, [user]);
-
+  // ---------------------------------------------------------------------
+  // Logged out: Landing -> Login / Signup
+  // ---------------------------------------------------------------------
   if (!user) {
+    if (authView === "login") {
+      return (
+        <LoginPage
+          onLogin={async (email, password) => {
+            const res = await api.login(email, password);
+            if (!res.success) {
+              throw new Error(res.message || "Invalid email or password.");
+            }
+            setToken(res.token);
+            persistUser(res.user);
+            setUser(res.user);
+          }}
+          onNavigateToSignup={() => setAuthView("signup")}
+        />
+      );
+    }
+
+    if (authView === "signup") {
+      return (
+        <SignupPage
+          onSignup={async ({ fullName, email, password, role }) => {
+            const res = await api.signup({ fullName, email, password, role });
+            if (!res.success) {
+              throw new Error(res.message || "Couldn't create your account.");
+            }
+            setToken(res.token);
+            persistUser(res.user);
+            setUser(res.user);
+          }}
+          onNavigateToLogin={() => setAuthView("login")}
+        />
+      );
+    }
+
+    // authView === "landing"
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-stone-50 px-4">
-        <div className="mb-8 text-center">
-          <p className="mb-2 text-sm font-medium uppercase tracking-wide text-stone-400">Room Rental System</p>
-          <h1 className="text-3xl font-semibold text-stone-900">Tenant Portal</h1>
-          <p className="mt-2 text-sm text-stone-500">Sign in to access your dashboard, bookings, and payments.</p>
-        </div>
-        {showAuth && (
-          <AuthModal
-            onClose={() => setShowAuth(false)}
-            onSuccess={(loggedInUser) => {
-              setUser(loggedInUser);
-              setShowAuth(false);
-            }}
-          />
-        )}
-        {!showAuth && (
-          <button
-            onClick={() => setShowAuth(true)}
-            className="rounded-xl bg-stone-900 px-6 py-3 text-sm font-medium text-white hover:bg-stone-800"
-          >
-            Sign In
-          </button>
-        )}
-      </div>
+      <LandingPage
+        onLogin={() => setAuthView("login")}
+        onSignup={() => setAuthView("signup")}
+        onPostProperty={() => setAuthView("signup")}
+        onBrowseRooms={() => setAuthView("signup")}
+      />
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Logged in
+  // ---------------------------------------------------------------------
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
     setTenantView("dashboard");
-    setShowAuth(true);
+    setAuthView("landing");
   };
 
   // ---- Role-based routing ----
@@ -106,11 +132,7 @@ function App() {
         We couldn't find a dashboard for your account role ({user.role}).
       </p>
       <button
-        onClick={() => {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          setUser(null);
-        }}
+        onClick={handleLogout}
         className="mt-6 rounded-xl bg-stone-900 px-6 py-3 text-sm font-medium text-white hover:bg-stone-800"
       >
         Switch Account
