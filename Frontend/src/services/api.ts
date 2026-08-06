@@ -1,4 +1,6 @@
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE = "http://localhost:5000";
+export const API_BASE_URL = `${API_BASE}/api`;
+export const UPLOAD_BASE_URL = API_BASE;
 
 export interface User {
   id: number;
@@ -67,6 +69,70 @@ export interface Inquiry {
   sender?: User;
   receiver?: User;
   room?: Room;
+}
+
+export interface Booking {
+  id: number;
+  roomId: number;
+  tenantId: number;
+  moveInDate: string;
+  endDate?: string;
+  totalAmount?: number;
+  notes?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "COMPLETED";
+  createdAt: string;
+  room?: Room;
+  payment?: Payment;
+}
+
+export interface Payment {
+  id: number;
+  bookingId: number;
+  amount: number;
+  paymentMethod: "ESEWA" | "KHALTI" | "CASH" | "BANK";
+  transactionId?: string;
+  status: "PENDING" | "PAID" | "FAILED" | "REFUNDED";
+  paidAt?: string;
+  createdAt: string;
+  booking?: Booking;
+}
+
+export interface Notification {
+  id: number;
+  userId: number;
+  title: string;
+  message: string;
+  type: "BOOKING" | "PAYMENT" | "MESSAGE" | "REVIEW" | "SYSTEM";
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface Favorite {
+  id: number;
+  userId: number;
+  roomId: number;
+  createdAt: string;
+  room?: Room;
+}
+
+export interface DashboardStats {
+  availableRooms: number;
+  savedRooms: number;
+  rentDueInDays: number | null;
+  pendingRequests: number;
+  nextPaymentDate: string | null;
+  leaseProgress: number;
+  preferredLocation: string;
+  locationMatches: number;
+}
+
+export interface TenantDashboardData {
+  stats: DashboardStats;
+  activeRental: Booking | null;
+  recentSaved: Favorite[];
+  notifications: Notification[];
+  messages: Inquiry[];
+  recommendations: RecommendationResult[];
 }
 
 // Token helper
@@ -153,9 +219,15 @@ export const api = {
   },
 
   // Recommendations
-  getPersonalizedRecommendations: async (params?: Record<string, any>) => {
-    const query = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE_URL}/rooms/recommendations?${query}`, {
+  getPersonalizedRecommendations: async (params?: Record<string, string | number>) => {
+    const query = params ? new URLSearchParams(params as Record<string, string>).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/tenant/recommendations?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getTenantDashboard: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/dashboard`, {
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -239,6 +311,81 @@ export const api = {
   getAdminStats: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/dashboard`, {
       headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  // Bookings
+  createBooking: async (data: { roomId: number; moveInDate: string; endDate?: string; notes?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/bookings`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  getTenantBookings: async () => {
+    const res = await fetch(`${API_BASE_URL}/bookings/my-bookings`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getLandlordBookings: async () => {
+    const res = await fetch(`${API_BASE_URL}/bookings/landlord`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updateBookingStatus: async (bookingId: number, status: string) => {
+    const res = await fetch(`${API_BASE_URL}/bookings/${bookingId}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    return res.json();
+  },
+  cancelBooking: async (bookingId: number) => {
+    const res = await fetch(`${API_BASE_URL}/bookings/${bookingId}/cancel`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  // Notifications
+  getNotifications: async (limit = 20) => {
+    const res = await fetch(`${API_BASE_URL}/notifications?limit=${limit}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  markNotificationRead: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  markAllNotificationsRead: async () => {
+    const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  // Payments
+  getMyPayments: async () => {
+    const res = await fetch(`${API_BASE_URL}/payments/my-payments`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  createPayment: async (bookingId: number, paymentMethod: string) => {
+    const res = await fetch(`${API_BASE_URL}/payments`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ bookingId, paymentMethod }),
     });
     return res.json();
   },

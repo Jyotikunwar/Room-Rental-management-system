@@ -18,7 +18,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
   isFavorite = false,
 }) => {
   const primaryImage = room.roomImages && room.roomImages.length > 0
-    ? `http://localhost:5000${room.roomImages[0].imageUrl}`
+    ? `${UPLOAD_BASE_URL}${room.roomImages[0].imageUrl}`
     : "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80";
 
   return (

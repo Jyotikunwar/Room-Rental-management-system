@@ -113,12 +113,12 @@ async function main() {
   const roomA = await prisma.room.create({
     data: {
       landlordId: landlord1.id,
-      title: "Modern Single Studio near Baneshwor",
+      title: "Shanti Niwas, Baneshwor",
       description: "Bright single studio room with high-speed WiFi, parking, and full furniture.",
       city: "Kathmandu",
       location: "Baneshwor",
       roomType: RoomType.SINGLE,
-      price: 12000,
+      price: 8500,
       status: RoomStatus.AVAILABLE,
       roomAmenities: {
         create: [
@@ -238,6 +238,77 @@ async function main() {
     data: {
       userId: tenant2.id,
       roomId: roomB.id,
+    },
+  });
+
+  // 7. Seed Demo Bookings, Payments & Notifications for Tenant Dashboard
+  console.log("📋 Seeding Bookings, Payments & Notifications for Tenant Dashboard...");
+  const approvedBooking = await prisma.booking.create({
+    data: {
+      roomId: roomA.id,
+      tenantId: tenant1.id,
+      moveInDate: new Date("2025-05-01"),
+      endDate: new Date("2026-04-30"),
+      totalAmount: roomA.price,
+      status: "APPROVED",
+      notes: "Demo active rental for tenant dashboard",
+    },
+  });
+
+  await prisma.room.update({
+    where: { id: roomA.id },
+    data: { status: RoomStatus.BOOKED },
+  });
+
+  await prisma.payment.create({
+    data: {
+      bookingId: approvedBooking.id,
+      amount: roomA.price,
+      paymentMethod: "ESEWA",
+      status: "PENDING",
+    },
+  });
+
+  await prisma.booking.create({
+    data: {
+      roomId: roomB.id,
+      tenantId: tenant1.id,
+      moveInDate: new Date("2025-08-15"),
+      totalAmount: roomB.price,
+      status: "PENDING",
+      notes: "Interested in moving in next month",
+    },
+  });
+
+  await prisma.notification.createMany({
+    data: [
+      {
+        userId: tenant1.id,
+        title: "Rent Payment Due Soon",
+        message: "Your rent of Rs. 8,500 for Shanti Niwas is due in 5 days.",
+        type: "PAYMENT",
+      },
+      {
+        userId: tenant1.id,
+        title: "New Room Available",
+        message: "3 new rooms matching your Baneshwor search are now available.",
+        type: "SYSTEM",
+      },
+      {
+        userId: tenant1.id,
+        title: "Owner Replied",
+        message: "Ram Owner replied to your inquiry about the Baneshwor studio.",
+        type: "MESSAGE",
+      },
+    ],
+  });
+
+  await prisma.message.create({
+    data: {
+      senderId: tenant1.id,
+      receiverId: landlord1.id,
+      roomId: roomB.id,
+      message: "Is this room still available for August move-in?",
     },
   });
 
