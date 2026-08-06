@@ -10,6 +10,9 @@ import PaymentsPage from "./components/Tenant/PaymentsPage";
 import MessagesPage from "./components/Tenant/MessagesPage";
 import NotificationsPage from "./components/Tenant/NotificationsPage";
 import SettingsPage from "./components/Tenant/SettingsPage";
+import { LandlordDashboard } from "./components/Landlord/Landlorddashboard";
+import { AdminDashboard } from "./components/Admin/AdminDashboard";
+
 import type { TenantView } from "./components/Tenant/navigation";
 import "./App.css";
 
@@ -51,12 +54,24 @@ function App() {
     );
   }
 
-  if (user.role === "TENANT") {
-    const handleLogout = () => {
-      setUser(null);
-      setTenantView("dashboard");
-    };
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setUser(null);
+    setTenantView("dashboard");
+    setShowAuth(true);
+  };
 
+  // ---- Role-based routing ----
+  if (user.role === "LANDLORD") {
+    return <LandlordDashboard user={user} onLogout={handleLogout} />;
+  }
+
+  if (user.role === "ADMIN") {
+    return <AdminDashboard user={user} onLogout={handleLogout} />;
+  }
+
+  if (user.role === "TENANT") {
     // setTenantView already matches the (view: TenantView) => void shape
     // every tenant page expects, so it's passed straight through as onNavigate.
     const sharedProps = { user, onLogout: handleLogout, onNavigate: setTenantView };
@@ -83,11 +98,12 @@ function App() {
     }
   }
 
+  // Fallback for any unrecognized role
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-stone-50 px-4 text-center">
       <h1 className="text-2xl font-semibold text-stone-900">Welcome, {user.fullName}</h1>
       <p className="mt-2 max-w-md text-sm text-stone-500">
-        This view is built for tenants. Please sign in with a tenant account to see the dashboard.
+        We couldn't find a dashboard for your account role ({user.role}).
       </p>
       <button
         onClick={() => {

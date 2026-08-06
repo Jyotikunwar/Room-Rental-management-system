@@ -1,132 +1,80 @@
-import React, { useState, useEffect } from "react";
-import type { RecommendationLog } from "../services/api";
-import { api } from "../services/api";
-import { Users, Building, Sparkles, Database } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { User } from "../../services/api";
+import { api } from "../../services/api";
+import { Users, Building2, UserCheck, LogOut } from "lucide-react";
 
-export const AdminDashboard: React.FC = () => {
-  const [stats, setStats] = useState<any>(null);
-  const [logs, setLogs] = useState<RecommendationLog[]>([]);
+type AdminDashboardProps = {
+  user: User;
+  onLogout: () => void;
+};
+
+type AdminStats = {
+  totalUsers: number;
+  totalRooms: number;
+  totalLandlords: number;
+  totalTenants: number;
+};
+
+export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchAdminData();
+    fetchStats();
   }, []);
 
-  const fetchAdminData = async () => {
+  const fetchStats = async () => {
     try {
-      const [statsRes, logsRes] = await Promise.all([
-        api.getAdminStats(),
-        api.getRecommendationLogs(),
-      ]);
-
-      if (statsRes.success) setStats(statsRes.stats);
-      if (logsRes.success) setLogs(logsRes.logs || []);
+      const data = await api.getAdminStats();
+      if (data.success) {
+        setStats(data.stats);
+      }
     } catch (e) {
-      console.error("Failed to fetch admin data:", e);
+      console.error("Failed to fetch admin stats:", e);
+    } finally {
+      setLoading(false);
     }
   };
 
+  const statCards = [
+    { label: "Total Users", value: stats?.totalUsers ?? 0, icon: Users },
+    { label: "Total Rooms", value: stats?.totalRooms ?? 0, icon: Building2 },
+    { label: "Landlords", value: stats?.totalLandlords ?? 0, icon: UserCheck },
+    { label: "Tenants", value: stats?.totalTenants ?? 0, icon: Users },
+  ];
+
   return (
-    <div className="admin-container glass-panel">
-      <div className="admin-header">
+    <div className="dashboard-container glass-panel">
+      <div className="dashboard-header">
         <div>
-          <span className="badge badge-amber">Admin & Viva Audit Workspace</span>
-          <h1 className="admin-title">System Analytics & Recommendation Logs</h1>
+          <span className="badge badge-emerald">Admin Workspace</span>
+          <h1 className="dashboard-title">Welcome back, {user.fullName}</h1>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={fetchAdminData}>
-          Refresh Logs
+        <button className="btn btn-secondary" onClick={onLogout}>
+          <LogOut size={18} />
+          <span>Logout</span>
         </button>
       </div>
 
-      {/* System Stats Cards */}
-      {stats && (
-        <div className="stats-grid">
-          <div className="stat-card glass-card">
-            <Users className="stat-icon text-indigo" />
-            <div>
-              <span className="stat-label">Total Registered Users</span>
-              <h3 className="stat-value">{stats.totalUsers}</h3>
-              <p className="stat-sub">{stats.totalTenants} Tenants • {stats.totalLandlords} Landlords</p>
-            </div>
-          </div>
-
-          <div className="stat-card glass-card">
-            <Building className="stat-icon text-cyan" />
-            <div>
-              <span className="stat-label">Total Room Listings</span>
-              <h3 className="stat-value">{stats.totalRooms}</h3>
-              <p className="stat-sub">{stats.availableRooms} Available for rent</p>
-            </div>
-          </div>
-
-          <div className="stat-card glass-card">
-            <Sparkles className="stat-icon text-amber" />
-            <div>
-              <span className="stat-label">Recommendation Log Runs</span>
-              <h3 className="stat-value">{logs.length}</h3>
-              <p className="stat-sub">Persisted in RecommendationLog DB table</p>
-            </div>
-          </div>
+      {loading ? (
+        <div className="empty-state glass-card">
+          <p>Loading dashboard stats...</p>
+        </div>
+      ) : (
+        <div className="admin-stats-grid">
+          {statCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div key={card.label} className="glass-card admin-stat-card">
+                <Icon size={24} className="text-cyan" />
+                <p className="admin-stat-value">{card.value}</p>
+                <p className="admin-stat-label">{card.label}</p>
+              </div>
+            );
+          })}
         </div>
       )}
-
-      {/* Viva Audit Recommendation Logs Table */}
-      <div className="logs-section">
-        <div className="logs-header">
-          <Database size={20} className="text-amber" />
-          <h2>Phase 4 Recommendation Engine DB Logs (Viva Demonstration Audit)</h2>
-        </div>
-
-        <div className="table-responsive glass-card">
-          <table className="logs-table">
-            <thead>
-              <tr>
-                <th>Log ID</th>
-                <th>Timestamp</th>
-                <th>Tenant</th>
-                <th>Recommended Room</th>
-                <th>Similarity Score (70%)</th>
-                <th>Popularity Score (30%)</th>
-                <th>Final Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center">No recommendation logs recorded yet.</td>
-                </tr>
-              ) : (
-                logs.map((log) => (
-                  <tr key={log.id}>
-                    <td>#{log.id}</td>
-                    <td>{new Date(log.createdAt).toLocaleTimeString()}</td>
-                    <td>{log.tenant?.fullName || (log.tenantId ? `Tenant #${log.tenantId}` : "Anonymous / Search")}</td>
-                    <td>
-                      <strong>{log.room?.title || `Room #${log.roomId}`}</strong>
-                      <span className="text-dim block text-xs">{log.room?.city} • NPR {log.room?.price}</span>
-                    </td>
-                    <td>
-                      <span className="badge badge-purple">
-                        {(log.similarityScore * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td>
-                      <span className="badge badge-amber">
-                        {(log.popularityScore * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td>
-                      <span className="badge badge-emerald font-bold">
-                        {(log.finalScore * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
-};
+}

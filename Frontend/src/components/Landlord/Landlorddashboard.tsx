@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
-import type { Room, Inquiry } from "../services/api";
-import { api } from "../services/api";
-import { PlusCircle, Building, MessageSquare, Image, User, MapPin } from "lucide-react";
+import type { Room, Inquiry, User } from "../../services/api";
+import { api } from "../../services/api";
+import { PlusCircle, Building, MessageSquare, Image, User as UserIcon, MapPin } from "lucide-react";
 
-interface LandlordDashboardProps {
-  onOpenCreateRoom: () => void;
-}
+type LandlordDashboardProps = {
+  user: User;
+  onLogout: () => void;
+};
 
-export const LandlordDashboard: React.FC<LandlordDashboardProps> = ({ onOpenCreateRoom }) => {
+export function LandlordDashboard({ user, onLogout }: LandlordDashboardProps) {
   const [myRooms, setMyRooms] = useState<Room[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [activeSubTab, setActiveSubTab] = useState<"rooms" | "inquiries">("rooms");
@@ -70,13 +71,19 @@ export const LandlordDashboard: React.FC<LandlordDashboardProps> = ({ onOpenCrea
       <div className="dashboard-header">
         <div>
           <span className="badge badge-emerald">Landlord Workspace</span>
-          <h1 className="dashboard-title">Listing & Inquiry Studio</h1>
+          <h1 className="dashboard-title">Welcome back, {user.fullName}</h1>
         </div>
 
-        <button className="btn btn-primary" onClick={onOpenCreateRoom}>
-          <PlusCircle size={18} />
-          <span>Add New Room Listing</span>
-        </button>
+        <div className="dashboard-header-actions">
+          <button className="btn btn-primary">
+            <PlusCircle size={18} />
+            <span>Add New Room Listing</span>
+          </button>
+          <button className="btn btn-secondary" onClick={onLogout}>
+            <UserIcon size={18} />
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
 
       {/* Sub Tabs */}
@@ -147,7 +154,7 @@ export const LandlordDashboard: React.FC<LandlordDashboardProps> = ({ onOpenCrea
             inquiries.map((inquiry) => (
               <div key={inquiry.id} className="inquiry-item glass-card">
                 <div className="inquiry-sender">
-                  <User size={20} className="text-cyan" />
+                  <UserIcon size={20} className="text-cyan" />
                   <div>
                     <h4>{inquiry.sender?.fullName}</h4>
                     <p>{inquiry.sender?.email} • {inquiry.sender?.phone || "No phone"}</p>
@@ -198,4 +205,4 @@ export const LandlordDashboard: React.FC<LandlordDashboardProps> = ({ onOpenCrea
       )}
     </div>
   );
-};
+}
