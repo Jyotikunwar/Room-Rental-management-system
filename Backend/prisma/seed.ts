@@ -29,7 +29,7 @@ async function main() {
 
   // 1. Clear existing seedable records in correct dependency order
   console.log("🧹 Cleaning old data...");
-  await prisma.recommendationLog.deleteMany({});
+
   await prisma.review.deleteMany({});
   await prisma.favorite.deleteMany({});
   await prisma.message.deleteMany({});
