@@ -1,91 +1,45 @@
-import { useState } from "react";
-import { Home, Menu, X } from "lucide-react";
+import { Home } from "lucide-react";
 
-const NAV_LINKS = ["Home", "Browse Rooms", "How It Works", "Features", "About", "Contact"];
-
-interface NavbarProps {
-  onNavClick?: (link: string) => void;
-  onLogin?: () => void;
-  onSignup?: () => void;
-  onPostProperty?: () => void;
+interface LandingNavbarProps {
+  onLoginClick: () => void;
+  onSignupClick: () => void;
+  onPostPropertyClick: () => void;
 }
 
-export default function Navbar({ onNavClick, onLogin, onSignup, onPostProperty }: NavbarProps) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-
+export default function LandingNavbar({ onLoginClick, onSignupClick, onPostPropertyClick }: LandingNavbarProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-stone-100 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/95 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
             <Home size={16} />
-          </span>
-          <span className="text-lg font-bold text-stone-900">Horizon</span>
+          </div>
+          <span className="text-lg font-bold text-gray-900">Horizon</span>
         </div>
 
-        {/* Desktop nav */}
-        <nav className="hidden items-center gap-7 lg:flex">
-          {NAV_LINKS.map((link) => (
-            <button
-              key={link}
-              onClick={() => onNavClick?.(link)}
-              className="text-sm font-medium text-stone-600 hover:text-stone-900"
-            >
-              {link}
-            </button>
-          ))}
+        <nav className="hidden items-center gap-8 text-sm font-medium text-gray-600 md:flex">
+          <a href="#home" className="hover:text-gray-900">Home</a>
+          <a href="#featured-rooms" className="hover:text-gray-900">Browse Rooms</a>
+          <a href="#how-it-works" className="hover:text-gray-900">How It Works</a>
+          <a href="#features" className="hover:text-gray-900">Features</a>
+          <a href="#contact" className="hover:text-gray-900">Contact</a>
         </nav>
 
-        <div className="hidden items-center gap-4 lg:flex">
-          <button onClick={onLogin} className="text-sm font-medium text-stone-600 hover:text-stone-900">
+        <div className="flex items-center gap-3">
+          <button onClick={onLoginClick} className="hidden text-sm font-medium text-gray-600 hover:text-gray-900 sm:block">
             Login
           </button>
-          <button onClick={onSignup} className="text-sm font-medium text-stone-600 hover:text-stone-900">
-            Sign Up
+          <button onClick={onSignupClick} className="hidden text-sm font-medium text-gray-600 hover:text-gray-900 sm:block">
+            Sign up
           </button>
           <button
-            onClick={onPostProperty}
-            className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800"
+            onClick={onPostPropertyClick}
+            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
           >
             Post Property
           </button>
         </div>
-
-        <button onClick={() => setMobileOpen((v) => !v)} className="text-stone-600 lg:hidden">
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
       </div>
-
-      {/* Mobile menu */}
-      {mobileOpen && (
-        <div className="border-t border-stone-100 bg-white px-4 py-3 lg:hidden">
-          <nav className="flex flex-col gap-1">
-            {NAV_LINKS.map((link) => (
-              <button
-                key={link}
-                onClick={() => {
-                  onNavClick?.(link);
-                  setMobileOpen(false);
-                }}
-                className="rounded-lg px-2 py-2 text-left text-sm font-medium text-stone-600 hover:bg-stone-50"
-              >
-                {link}
-              </button>
-            ))}
-          </nav>
-          <div className="mt-3 flex flex-col gap-2 border-t border-stone-100 pt-3">
-            <button onClick={onLogin} className="rounded-lg border border-stone-200 py-2 text-sm font-medium text-stone-700">
-              Login
-            </button>
-            <button onClick={onSignup} className="rounded-lg border border-stone-200 py-2 text-sm font-medium text-stone-700">
-              Sign Up
-            </button>
-            <button onClick={onPostProperty} className="rounded-lg bg-stone-900 py-2 text-sm font-medium text-white">
-              Post Property
-            </button>
-          </div>
-        </div>
-      )}
     </header>
   );
 }

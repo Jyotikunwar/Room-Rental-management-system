@@ -1,18 +1,47 @@
-const STATS = [
-  { value: "500+", label: "Properties" },
-  { value: "200+", label: "Landlords" },
-  { value: "1200+", label: "Happy Tenants" },
-  { value: "98%", label: "Satisfaction" },
-];
+import { useEffect, useState } from "react";
+import { api } from "../../services/api";
+
+interface PublicStats {
+  totalRooms: number;
+  totalLandlords: number;
+  totalTenants: number;
+  satisfactionPercent: number | null;
+}
 
 export default function StatsBar() {
+  const [stats, setStats] = useState<PublicStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.getPublicStats();
+        if (res.success) setStats(res.stats);
+      } catch (e) {
+        console.error("Failed to load platform stats:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const items = [
+    { label: "Properties", value: stats ? `${stats.totalRooms}+` : "—" },
+    { label: "Landlords", value: stats ? `${stats.totalLandlords}+` : "—" },
+    { label: "Happy Tenants", value: stats ? `${stats.totalTenants}+` : "—" },
+    {
+      label: "Satisfaction",
+      value: stats?.satisfactionPercent != null ? `${stats.satisfactionPercent}%` : "No reviews yet",
+    },
+  ];
+
   return (
-    <section className="bg-stone-900 py-10">
-      <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-4 sm:grid-cols-4 sm:px-6 lg:px-8">
-        {STATS.map((s) => (
-          <div key={s.label} className="text-center">
-            <p className="text-2xl font-bold text-white sm:text-3xl">{s.value}</p>
-            <p className="mt-1 text-xs text-stone-400">{s.label}</p>
+    <section className="bg-[#0f172a] py-10">
+      <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-6 text-center sm:grid-cols-4">
+        {items.map((item) => (
+          <div key={item.label}>
+            <p className="text-3xl font-bold text-white">{loading ? "…" : item.value}</p>
+            <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{item.label}</p>
           </div>
         ))}
       </div>

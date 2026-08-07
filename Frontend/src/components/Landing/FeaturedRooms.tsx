@@ -1,94 +1,91 @@
-import { MapPin, Star, BedDouble, Bath } from "lucide-react";
-
-interface FeaturedRoom {
-  id: number;
-  title: string;
-  area: string;
-  price: number;
-  rating: number;
-  beds: number;
-  baths: number;
-  badge?: string;
-  img: string;
-}
-
-const FEATURED_ROOMS: FeaturedRoom[] = [
-  {
-    id: 1, title: "Cozy Single Room", area: "Thamel, Kathmandu", price: 8500,
-    rating: 4.8, beds: 1, baths: 1, badge: "New", img: "/images/rooms/room6.png",
-  },
-  {
-    id: 2, title: "Modern 1BHK Flat", area: "Lazimpat, Kathmandu", price: 15000,
-    rating: 4.6, beds: 1, baths: 1, img: "/images/rooms/room4.png",
-  },
-  {
-    id: 3, title: "Shared Apartment", area: "Baneshwor, Kathmandu", price: 6000,
-    rating: 4.5, beds: 2, baths: 1, badge: "Popular", img: "/images/rooms/room5.png",
-  },
-  {
-    id: 4, title: "Budget Room", area: "Kalanki, Kathmandu", price: 5000,
-    rating: 4.3, beds: 1, baths: 1, img: "/images/rooms/Room1.png",
-  },
-];
+import { useEffect, useState } from "react";
+import { Heart, MapPin } from "lucide-react";
+import { api, type Room } from "../../services/api";
 
 interface FeaturedRoomsProps {
-  onViewDetails?: (roomId: number) => void;
-  onSeeAll?: () => void;
+  onViewDetails: (roomId: number) => void;
 }
 
-export default function FeaturedRooms({ onViewDetails, onSeeAll }: FeaturedRoomsProps) {
+export default function FeaturedRooms({ onViewDetails }: FeaturedRoomsProps) {
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRooms();
+  }, []);
+
+  async function loadRooms() {
+    setLoading(true);
+    try {
+      const res = await api.getRooms({ status: "AVAILABLE" });
+      if (res.success) setRooms((res.rooms || []).slice(0, 4));
+    } catch (e) {
+      console.error("Failed to load featured rooms:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section id="featured-rooms" className="mx-auto max-w-7xl px-6 py-16">
+      <div className="mb-8 flex items-end justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-stone-900 sm:text-3xl">Featured Rooms</h2>
-          <p className="mt-1 text-sm text-stone-500">Explore the latest rooms and apartments available right now.</p>
+          <h2 className="text-2xl font-bold text-gray-900">Featured Rooms</h2>
+          <p className="mt-1 text-sm text-gray-500">Explore the latest rooms available right now</p>
         </div>
-        <button onClick={onSeeAll} className="text-sm font-medium text-blue-600 hover:underline">
-          View all rooms
-        </button>
+        <a href="#featured-rooms" className="text-sm font-medium text-blue-600 hover:text-blue-700">
+          View all rooms →
+        </a>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {FEATURED_ROOMS.map((room) => (
-          <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-            <div className="relative h-40 w-full">
-              <img src={room.img} alt={room.title} className="h-full w-full object-cover" />
-              {room.badge && (
-                <span className="absolute left-2 top-2 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-                  {room.badge}
-                </span>
-              )}
-              <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-stone-700">
-                <Star size={10} className="fill-amber-400 text-amber-400" /> {room.rating}
-              </span>
-            </div>
-
-            <div className="p-3.5">
-              <p className="text-sm font-semibold text-blue-700">Rs. {room.price.toLocaleString()}<span className="text-xs font-normal text-stone-400">/mo</span></p>
-              <h3 className="mt-1 text-sm font-semibold text-stone-900">{room.title}</h3>
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500">
-                <MapPin size={11} /> {room.area}
-              </p>
-
-              <div className="mt-2 flex items-center gap-3 text-xs text-stone-400">
-                <span className="flex items-center gap-1">
-                  <BedDouble size={12} /> {room.beds}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Bath size={12} /> {room.baths}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-72 animate-pulse rounded-2xl bg-gray-100" />
+          ))
+        ) : rooms.length === 0 ? (
+          <p className="col-span-full py-10 text-center text-gray-400">No rooms listed yet.</p>
+        ) : (
+          rooms.map((room) => (
+            <div key={room.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+              <div className="relative h-40 bg-gray-100">
+                {room.roomImages?.[0]?.imageUrl ? (
+                  <img
+                    src={room.roomImages[0].imageUrl}
+                    alt={room.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-gray-400">No photo</div>
+                )}
+                <button
+                  className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-500 hover:text-red-500"
+                  aria-label="Save room"
+                >
+                  <Heart size={14} />
+                </button>
+                <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                  Rs. {room.price.toLocaleString()}
                 </span>
               </div>
 
-              <button
-                onClick={() => onViewDetails?.(room.id)}
-                className="mt-3 w-full rounded-lg bg-stone-900 py-2 text-xs font-medium text-white hover:bg-stone-800"
-              >
-                View Details
-              </button>
+              <div className="p-4">
+                <h3 className="font-semibold text-gray-900">{room.title}</h3>
+                <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                  <MapPin size={12} />
+                  {room.location}, {room.city}
+                </p>
+
+                <button
+                  onClick={() => onViewDetails(room.id)}
+                  className="mt-3 w-full rounded-lg bg-gray-900 py-2 text-xs font-semibold text-white hover:bg-gray-800"
+                >
+                  View Details
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </section>
   );

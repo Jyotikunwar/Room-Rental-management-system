@@ -1,30 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Search, Heart, MapPin, ChevronDown, Filter, Check,
+  Search, Heart, MapPin, ChevronDown, Filter, Check, X, Star,
+  Calendar, Phone, Mail, Loader2, Send,
 } from "lucide-react";
-import type { User } from "../../services/api";
+import type { User, Room } from "../../services/api";
+import { api } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
-
-// ---------- Types ----------
-type RoomStatus = "available" | "booked" | "loading";
-
-interface SavedRoom {
-  id: number;
-  title: string;
-  location: string;
-  price: number;
-  deposit: number;
-  roomType: string;
-  furnishing: string;
-  savedAgo: string;
-  status: RoomStatus;
-  priceDropped: boolean;
-  updatedToday: boolean;
-  notifyPriceDrop: boolean;
-  notifyAvailability: boolean;
-  img: string | null;
-}
 
 interface SavedRoomsProps {
   user: User;
@@ -32,73 +14,40 @@ interface SavedRoomsProps {
   onNavigate: (view: TenantView) => void;
 }
 
-// ---------- Sample data (replace with data fetched from your api/services layer) ----------
-const INITIAL_SAVED_ROOMS: SavedRoom[] = [
-  {
-    id: 1,
-    title: "Luxury Studio Room",
-    location: "Baneshwor, Kathmandu",
-    price: 12000,
-    deposit: 24000,
-    roomType: "Room",
-    furnishing: "Full Furnished",
-    savedAgo: "Saved 2 days ago",
-    status: "available",
-    priceDropped: true,
-    updatedToday: true,
-    notifyPriceDrop: true,
-    notifyAvailability: true,
-    img: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600&q=80",
-  },
-  {
-    id: 2,
-    title: "Spacious 1BHK",
-    location: "Maitidevi, Kathmandu",
-    price: 18500,
-    deposit: 37000,
-    roomType: "1BHK",
-    furnishing: "Unfurnished",
-    savedAgo: "Saved 5 days ago",
-    status: "booked",
-    priceDropped: false,
-    updatedToday: false,
-    notifyPriceDrop: false,
-    notifyAvailability: false,
-    img: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=600&q=80",
-  },
-  {
-    id: 3,
-    title: "Parking View Deluxe",
-    location: "Lazimpat, Kathmandu",
-    price: 15000,
-    deposit: 30000,
-    roomType: "Deluxe",
-    furnishing: "Semi-Furnished",
-    savedAgo: "Saved 1 week ago",
-    status: "available",
-    priceDropped: false,
-    updatedToday: false,
-    notifyPriceDrop: true,
-    notifyAvailability: true,
-    img: "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=600&q=80",
-  },
-  {
-    id: 4,
-    title: "Garden Terrace Flat",
-    location: "Patan, Lalitpur",
-    price: 9500,
-    deposit: 19000,
-    roomType: "Flat",
-    furnishing: "Semi-Furnished",
-    savedAgo: "Saved 10 days ago",
-    status: "loading",
-    priceDropped: false,
-    updatedToday: false,
-    notifyPriceDrop: false,
-    notifyAvailability: false,
-    img: null,
-  },
-];
+interface FavoriteEntry {
+  id: number;
+  roomId: number;
+  createdAt: string;
+  room: Room;
+}
+
+// Images uploaded through the app are served by the backend from /uploads/...
+// Static assets placed in Frontend/public (e.g. /images/rooms/Room1.png) are
+// served by the frontend's own origin and must NOT be prefixed.
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:5000";
+
+function resolveImageUrl(url?: string): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return `${API_BASE_URL}${url}`;
+  return url;
+}
+
+function avgRating(room: Room): number | null {
+  if (!room.reviews || room.reviews.length === 0) return null;
+  const sum = room.reviews.reduce((s, r) => s + r.rating, 0);
+  return Math.round((sum / room.reviews.length) * 10) / 10;
+}
+
+function timeAgo(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days <= 0) return "Saved today";
+  if (days === 1) return "Saved 1 day ago";
+  if (days < 7) return `Saved ${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  return weeks === 1 ? "Saved 1 week ago" : `Saved ${weeks} weeks ago`;
+}
 
 const SORT_OPTIONS = [
   { value: "recent", label: "Recently Saved" },
@@ -109,57 +58,177 @@ const SORT_OPTIONS = [
 type SortValue = (typeof SORT_OPTIONS)[number]["value"];
 
 export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsProps) {
-  const [rooms, setRooms] = useState<SavedRoom[]>(INITIAL_SAVED_ROOMS);
+  const [favorites, setFavorites] = useState<FavoriteEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+
   const [query, setQuery] = useState("");
   const [availableOnly, setAvailableOnly] = useState(false);
   const [sort, setSort] = useState<SortValue>("recent");
   const [sortOpen, setSortOpen] = useState(false);
-  const [compareIds, setCompareIds] = useState<Set<number>>(new Set());
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const toggleCompare = (id: number) =>
-    setCompareIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  // ---- Details modal ----
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
-  const removeRoom = (id: number) => {
-    setRooms((prev) => prev.filter((r) => r.id !== id));
-    setCompareIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  // ---- Booking modal ----
+  const [bookingRoom, setBookingRoom] = useState<Room | null>(null);
+  const [moveInDate, setMoveInDate] = useState("");
+  const [bookingNotes, setBookingNotes] = useState("");
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState(false);
+
+  // ---- Contact owner modal ----
+  const [contactRoom, setContactRoom] = useState<Room | null>(null);
+  const [contactMessage, setContactMessage] = useState("");
+  const [contactSending, setContactSending] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [contactSent, setContactSent] = useState(false);
+
+  const loadFavorites = () => {
+    setLoading(true);
+    setError(null);
+    api
+      .getFavorites()
+      .then((res) => {
+        if (res.success) setFavorites(res.favorites || []);
+        else setError(res.message || "Failed to load saved rooms");
+      })
+      .catch(() => setError("Failed to load saved rooms"))
+      .finally(() => setLoading(false));
   };
 
-  const clearAll = () => {
-    setRooms([]);
-    setCompareIds(new Set());
+  useEffect(() => {
+    loadFavorites();
+  }, []);
+
+  const removeFavorite = async (roomId: number, favoriteId: number) => {
+    setRemovingId(favoriteId);
+    const prev = favorites;
+    setFavorites((f) => f.filter((x) => x.id !== favoriteId));
+    try {
+      const res = await api.toggleFavorite(roomId);
+      if (!res.success) setFavorites(prev);
+    } catch {
+      setFavorites(prev);
+    } finally {
+      setRemovingId(null);
+    }
   };
 
-  const toggleNotify = (id: number, field: "notifyPriceDrop" | "notifyAvailability") => {
-    setRooms((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: !r[field] } : r))
-    );
+  const clearAll = async () => {
+    const prev = favorites;
+    setFavorites([]);
+    try {
+      await Promise.all(prev.map((f) => api.toggleFavorite(f.roomId)));
+    } catch {
+      setFavorites(prev);
+    }
+  };
+
+  const openDetails = (room: Room) => setSelectedRoom(room);
+
+  const openBooking = (room: Room) => {
+    setSelectedRoom(null);
+    setBookingRoom(room);
+    setMoveInDate("");
+    setBookingNotes("");
+    setBookingError(null);
+    setBookingSuccess(false);
+  };
+
+  const closeBooking = () => {
+    setBookingRoom(null);
+    setBookingSubmitting(false);
+    setBookingError(null);
+    setBookingSuccess(false);
+  };
+
+  const submitBooking = async () => {
+    if (!bookingRoom) return;
+    if (!moveInDate) {
+      setBookingError("Please select a move-in date");
+      return;
+    }
+    setBookingSubmitting(true);
+    setBookingError(null);
+    try {
+      const res = await api.createBooking({
+        roomId: bookingRoom.id,
+        moveInDate,
+        notes: bookingNotes || undefined,
+      });
+      if (res.success) setBookingSuccess(true);
+      else setBookingError(res.message || "Failed to create booking");
+    } catch {
+      setBookingError("Failed to create booking. Please try again.");
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const goToMyRequests = () => {
+    closeBooking();
+    onNavigate(NAV_LABEL_TO_VIEW["My Requests"]);
+  };
+
+  const openContact = (room: Room) => {
+    setSelectedRoom(null);
+    setContactRoom(room);
+    setContactMessage("");
+    setContactError(null);
+    setContactSent(false);
+  };
+
+  const closeContact = () => {
+    setContactRoom(null);
+    setContactSending(false);
+    setContactError(null);
+    setContactSent(false);
+  };
+
+  const sendContactMessage = async () => {
+    if (!contactRoom) return;
+    if (!contactMessage.trim()) {
+      setContactError("Please write a message");
+      return;
+    }
+    setContactSending(true);
+    setContactError(null);
+    try {
+      const res = await api.sendMessage({
+        receiverId: contactRoom.landlordId,
+        roomId: contactRoom.id,
+        message: contactMessage.trim(),
+      });
+      if (res.success) setContactSent(true);
+      else setContactError(res.message || "Failed to send message");
+    } catch {
+      setContactError("Failed to send message. Please try again.");
+    } finally {
+      setContactSending(false);
+    }
   };
 
   const filtered = useMemo(() => {
-    let list = rooms.filter((r) => {
+    let list = favorites.filter((f) => {
+      const r = f.room;
       const matchesQuery =
         query.trim() === "" ||
         r.title.toLowerCase().includes(query.toLowerCase()) ||
-        r.location.toLowerCase().includes(query.toLowerCase());
-      const matchesAvailable = !availableOnly || r.status === "available";
+        r.location.toLowerCase().includes(query.toLowerCase()) ||
+        r.city.toLowerCase().includes(query.toLowerCase());
+      const matchesAvailable = !availableOnly || r.status === "AVAILABLE";
       return matchesQuery && matchesAvailable;
     });
-    if (sort === "price-low") list = [...list].sort((a, b) => a.price - b.price);
-    if (sort === "price-high") list = [...list].sort((a, b) => b.price - a.price);
+    if (sort === "price-low") list = [...list].sort((a, b) => a.room.price - b.room.price);
+    if (sort === "price-high") list = [...list].sort((a, b) => b.room.price - a.room.price);
+    if (sort === "recent") list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return list;
-  }, [rooms, query, availableOnly, sort]);
+  }, [favorites, query, availableOnly, sort]);
 
   const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
-
   const sortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Sort";
 
   return (
@@ -184,7 +253,7 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
             />
           </div>
           <div className="flex items-center gap-1">
-            <button className="relative text-stone-500 hover:text-stone-700">
+            <button onClick={() => onNavigate("notifications")} className="relative text-stone-500 hover:text-stone-700">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -204,11 +273,10 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
         {/* ---- Header ---- */}
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Saved Rooms ({rooms.length})</h1>
-            <p className="text-sm text-stone-500">Manage and compare your favorite listings</p>
+            <h1 className="text-xl font-semibold">Saved Rooms ({favorites.length})</h1>
+            <p className="text-sm text-stone-500">Manage your favorite listings</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Sort dropdown */}
             <div className="relative">
               <button
                 onClick={() => setSortOpen((v) => !v)}
@@ -238,16 +306,11 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
               )}
             </div>
 
-            <button onClick={clearAll} className="text-xs font-medium text-rose-500 hover:underline">
-              Clear All
-            </button>
-
-            <button className="flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-stone-800">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-              </svg>
-              Compare Selected ({compareIds.size})
-            </button>
+            {favorites.length > 0 && (
+              <button onClick={clearAll} className="text-xs font-medium text-rose-500 hover:underline">
+                Clear All
+              </button>
+            )}
           </div>
         </div>
 
@@ -256,70 +319,33 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
           <div className="flex flex-1 items-center gap-2 rounded-xl bg-stone-100 px-3 py-2">
             <Filter size={14} className="shrink-0 text-stone-400" />
             <input
-              placeholder="Filter by location or price..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by location..."
               className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <button className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs text-stone-600 hover:bg-stone-50">
-              <MapPin size={13} /> Location <ChevronDown size={12} />
-            </button>
-            <button className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs text-stone-600 hover:bg-stone-50">
-              Budget <ChevronDown size={12} />
-            </button>
-            <button className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs text-stone-600 hover:bg-stone-50">
-              Room Type <ChevronDown size={12} />
-            </button>
-            <label className="flex items-center gap-1.5 text-xs text-stone-600">
-              <input
-                type="checkbox"
-                checked={availableOnly}
-                onChange={() => setAvailableOnly((v) => !v)}
-                className="h-3.5 w-3.5 accent-blue-600"
-              />
-              Available Only
-            </label>
-            <button
-              onClick={() => setAdvancedOpen((v) => !v)}
-              className="text-xs font-medium text-blue-600 hover:underline"
-            >
-              Advanced Filters
-            </button>
-          </div>
+          <label className="flex items-center gap-1.5 text-xs text-stone-600">
+            <input
+              type="checkbox"
+              checked={availableOnly}
+              onChange={() => setAvailableOnly((v) => !v)}
+              className="h-3.5 w-3.5 accent-blue-600"
+            />
+            Available Only
+          </label>
         </div>
 
-        {/* ---- Advanced filters panel ---- */}
-        {advancedOpen && (
-          <div className="mb-6 grid grid-cols-1 gap-3 rounded-2xl border border-stone-200 bg-white p-4 sm:grid-cols-3">
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-stone-500">Furnishing</p>
-              <select className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs text-stone-600 outline-none">
-                <option>Any</option>
-                <option>Fully Furnished</option>
-                <option>Semi Furnished</option>
-                <option>Unfurnished</option>
-              </select>
-            </div>
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-stone-500">Deposit Range</p>
-              <input type="range" min={0} max={100000} className="mt-2 w-full accent-blue-600" readOnly value={40000} />
-            </div>
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-stone-500">Notify Preferences</p>
-              <div className="flex items-center gap-4 text-xs text-stone-600">
-                <label className="flex items-center gap-1.5">
-                  <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" /> Price Drop only
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" /> Availability only
-                </label>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ---- Room cards ---- */}
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="animate-spin text-stone-400" size={26} />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-stone-300 bg-white p-14 text-center">
+            <p className="text-sm text-stone-500">{error}</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-stone-300 bg-white p-14 text-center">
             <Heart size={22} className="text-stone-300" />
             <p className="text-sm font-medium text-stone-600">No saved rooms yet</p>
@@ -327,162 +353,504 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((room) => (
-              <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-                {/* Image */}
-                <div className="relative h-40 w-full bg-stone-100">
-                  {room.status === "loading" || !room.img ? (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-stone-400">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                        <circle cx="12" cy="13" r="4" />
-                        <path d="M18 6h.01" />
-                      </svg>
-                      <span className="text-xs">Loading Preview...</span>
+            {filtered.map((f) => {
+              const room = f.room;
+              const rating = avgRating(room);
+              return (
+                <div key={f.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+                  {/* Image */}
+                  <button onClick={() => openDetails(room)} className="relative block h-40 w-full bg-stone-100">
+                    {room.roomImages && room.roomImages.length > 0 ? (
+                      <img
+                        src={resolveImageUrl(room.roomImages[0].imageUrl)}
+                        alt={room.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-stone-400">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                          <circle cx="12" cy="13" r="4" />
+                        </svg>
+                        <span className="text-xs">No image</span>
+                      </div>
+                    )}
+
+                    <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
+                      {room.status === "AVAILABLE" && (
+                        <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                          Available
+                        </span>
+                      )}
+                      {room.status === "BOOKED" && (
+                        <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                          Already Booked
+                        </span>
+                      )}
+                      {room.status === "UNDER_MAINTENANCE" && (
+                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                          Under Maintenance
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <img src={room.img} alt={room.title} className="h-full w-full object-cover" />
-                  )}
 
-                  <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
-                    {room.status === "available" && (
-                      <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white">
-                        Available
-                      </span>
-                    )}
-                    {room.status === "booked" && (
-                      <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white">
-                        Already Booked
-                      </span>
-                    )}
-                    {room.priceDropped && (
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                        Price Dropped Rs. 500
-                      </span>
-                    )}
-                    {room.updatedToday && (
-                      <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-stone-600">
-                        Updated Today
-                      </span>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => removeRoom(room.id)}
-                    aria-label="Remove from saved"
-                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-500 shadow-sm hover:bg-white"
-                  >
-                    <Heart size={14} fill="currentColor" />
+                    <span
+                      role="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFavorite(room.id, f.id);
+                      }}
+                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-rose-500 shadow-sm hover:bg-white"
+                    >
+                      {removingId === f.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Heart size={14} fill="currentColor" />
+                      )}
+                    </span>
                   </button>
 
-                  {room.status !== "loading" && (
-                    <label className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-1 text-[10px] font-medium text-stone-600">
-                      <input
-                        type="checkbox"
-                        checked={compareIds.has(room.id)}
-                        onChange={() => toggleCompare(room.id)}
-                        className="h-3 w-3 accent-blue-600"
-                      />
-                      Compare
-                    </label>
-                  )}
-                </div>
+                  {/* Body */}
+                  <div className="p-3">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <h3 className="truncate text-sm font-semibold">{room.title}</h3>
+                      {rating !== null && (
+                        <span className="flex shrink-0 items-center gap-0.5 text-xs text-amber-500">
+                          <Star size={12} fill="currentColor" /> {rating}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mb-1.5 flex items-center gap-1 text-xs text-stone-500">
+                      <MapPin size={11} /> {room.location}, {room.city}
+                    </p>
+                    <p className="text-sm font-semibold text-blue-700">
+                      Rs. {room.price.toLocaleString()}
+                      <span className="text-xs font-normal text-stone-400">/month</span>
+                    </p>
 
-                {/* Body */}
-                <div className="p-3">
-                  <h3 className="text-sm font-semibold">{room.title}</h3>
-                  <p className="mb-1.5 flex items-center gap-1 text-xs text-stone-500">
-                    <MapPin size={11} /> {room.location}
-                  </p>
-                  <p className="text-sm font-semibold text-blue-700">
-                    Rs. {room.price.toLocaleString()}
-                    <span className="text-xs font-normal text-stone-400">/month</span>
-                  </p>
-
-                  <div className="mt-2 flex items-center gap-3 text-[11px] text-stone-500">
-                    <span className="flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="7" width="20" height="14" rx="2" />
-                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-                      </svg>
-                      Dep: Rs. {room.deposit.toLocaleString()}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
-                      </svg>
-                      Type: {room.roomType}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-3 text-[11px] text-stone-500">
-                    <span className="flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 6L9 17l-5-5" />
-                      </svg>
-                      {room.furnishing}
-                    </span>
-                    <span className="flex items-center gap-1">
+                    <div className="mt-2 flex items-center gap-3 text-[11px] text-stone-500">
+                      {room.securityDeposit != null && (
+                        <span className="flex items-center gap-1">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="2" y="7" width="20" height="14" rx="2" />
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                          </svg>
+                          Dep: Rs. {room.securityDeposit.toLocaleString()}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+                        </svg>
+                        {room.roomType}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1 text-[11px] text-stone-500">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" />
                         <path d="M12 6v6l4 2" />
                       </svg>
-                      {room.savedAgo}
-                    </span>
-                  </div>
-
-                  {room.status !== "loading" && (
-                    <div className="mt-3 border-t border-stone-100 pt-2.5">
-                      <p className="mb-1.5 text-[11px] font-medium text-stone-500">Notify me about:</p>
-                      <div className="flex items-center gap-4 text-[11px] text-stone-600">
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="checkbox"
-                            checked={room.notifyPriceDrop}
-                            onChange={() => toggleNotify(room.id, "notifyPriceDrop")}
-                            className="h-3.5 w-3.5 accent-blue-600"
-                          />
-                          Price Drop
-                        </label>
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="checkbox"
-                            checked={room.notifyAvailability}
-                            onChange={() => toggleNotify(room.id, "notifyAvailability")}
-                            className="h-3.5 w-3.5 accent-blue-600"
-                          />
-                          Availability
-                        </label>
-                      </div>
+                      {timeAgo(f.createdAt)}
                     </div>
-                  )}
 
-                  <div className="mt-3 flex flex-col gap-2">
-                    {room.status === "booked" ? (
-                      <button disabled className="rounded-lg bg-stone-100 py-1.5 text-xs font-medium text-stone-400">
-                        Waitlist Only
-                      </button>
-                    ) : (
-                      <button className="rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white hover:bg-stone-800">
-                        Book Now
-                      </button>
-                    )}
-                    {room.status !== "loading" && (
+                    <div className="mt-3 flex flex-col gap-2">
+                      {room.status !== "AVAILABLE" ? (
+                        <button disabled className="rounded-lg bg-stone-100 py-1.5 text-xs font-medium text-stone-400">
+                          {room.status === "BOOKED" ? "Already Booked" : "Unavailable"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => openBooking(room)}
+                          className="rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white hover:bg-stone-800"
+                        >
+                          Book Now
+                        </button>
+                      )}
                       <div className="flex gap-2">
-                        <button className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50">
+                        <button
+                          onClick={() => openDetails(room)}
+                          className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50"
+                        >
                           View Details
                         </button>
-                        <button className="flex-1 rounded-lg border border-blue-200 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50">
+                        <button
+                          onClick={() => openContact(room)}
+                          className="flex-1 rounded-lg border border-blue-200 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        >
                           Contact Owner
                         </button>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
+
+      {/* ---- Room Details Modal ---- */}
+      {selectedRoom && (
+        <RoomDetailsModal
+          room={selectedRoom}
+          onClose={() => setSelectedRoom(null)}
+          onBookNow={() => openBooking(selectedRoom)}
+          onContactOwner={() => openContact(selectedRoom)}
+        />
+      )}
+
+      {/* ---- Booking Modal ---- */}
+      {bookingRoom && (
+        <BookingModal
+          room={bookingRoom}
+          moveInDate={moveInDate}
+          notes={bookingNotes}
+          submitting={bookingSubmitting}
+          error={bookingError}
+          success={bookingSuccess}
+          onMoveInDateChange={setMoveInDate}
+          onNotesChange={setBookingNotes}
+          onSubmit={submitBooking}
+          onClose={closeBooking}
+          onGoToMyRequests={goToMyRequests}
+        />
+      )}
+
+      {/* ---- Contact Owner Modal ---- */}
+      {contactRoom && (
+        <ContactOwnerModal
+          room={contactRoom}
+          message={contactMessage}
+          sending={contactSending}
+          error={contactError}
+          sent={contactSent}
+          onMessageChange={setContactMessage}
+          onSend={sendContactMessage}
+          onClose={closeContact}
+        />
+      )}
+    </div>
+  );
+}
+
+function RoomDetailsModal({
+  room,
+  onClose,
+  onBookNow,
+  onContactOwner,
+}: {
+  room: Room;
+  onClose: () => void;
+  onBookNow: () => void;
+  onContactOwner: () => void;
+}) {
+  const rating = avgRating(room);
+  const images = room.roomImages && room.roomImages.length > 0 ? room.roomImages : [];
+  const amenityNames = (room.roomAmenities || []).map((ra) => ra.amenity.name);
+  const [activeImage, setActiveImage] = useState(0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl bg-white sm:max-w-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
+          <span className="text-sm font-semibold">Room Details</span>
+          <button onClick={onClose} className="text-stone-500 hover:text-stone-700">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto">
+          <div className="relative h-56 w-full bg-stone-100 sm:h-72">
+            {images.length > 0 ? (
+              <img
+                src={resolveImageUrl(images[activeImage]?.imageUrl)}
+                alt={room.title}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-stone-400">No images</div>
+            )}
+          </div>
+
+          {images.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto p-3">
+              {images.map((img, i) => (
+                <button
+                  key={img.id ?? i}
+                  onClick={() => setActiveImage(i)}
+                  className={`h-14 w-20 shrink-0 overflow-hidden rounded-lg border-2 ${
+                    activeImage === i ? "border-blue-600" : "border-transparent"
+                  }`}
+                >
+                  <img src={resolveImageUrl(img.imageUrl)} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="p-4">
+            <div className="mb-1 flex items-start justify-between gap-2">
+              <h2 className="text-lg font-semibold">{room.title}</h2>
+              {rating !== null && (
+                <span className="flex shrink-0 items-center gap-0.5 text-sm text-amber-500">
+                  <Star size={14} fill="currentColor" /> {rating}
+                </span>
+              )}
+            </div>
+            <p className="mb-3 flex items-center gap-1 text-sm text-stone-500">
+              <MapPin size={13} /> {room.location}, {room.city}
+            </p>
+            <p className="mb-4 text-xl font-bold text-blue-700">
+              Rs. {room.price.toLocaleString()}/month
+              {room.securityDeposit != null && (
+                <span className="ml-2 text-sm font-normal text-stone-500">
+                  + Rs. {room.securityDeposit.toLocaleString()} deposit
+                </span>
+              )}
+            </p>
+
+            {room.description && <p className="mb-4 text-sm text-stone-600">{room.description}</p>}
+
+            {amenityNames.length > 0 && (
+              <div className="mb-4">
+                <p className="mb-2 text-xs font-medium text-stone-500">Amenities</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {amenityNames.map((a) => (
+                    <span key={a} className="rounded-md bg-stone-100 px-2.5 py-1 text-xs text-stone-600">
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {room.landlord && (
+              <div className="mb-4 rounded-xl border border-stone-200 p-3">
+                <p className="mb-1 text-xs font-medium text-stone-500">Landlord</p>
+                <p className="text-sm font-semibold">{room.landlord.fullName}</p>
+                <div className="mt-1 flex flex-col gap-1 text-xs text-stone-500">
+                  {room.landlord.phone && (
+                    <span className="flex items-center gap-1">
+                      <Phone size={11} /> {room.landlord.phone}
+                    </span>
+                  )}
+                  {room.landlord.email && (
+                    <span className="flex items-center gap-1">
+                      <Mail size={11} /> {room.landlord.email}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 border-t border-stone-200 p-3">
+          <button
+            onClick={onContactOwner}
+            className="flex-1 rounded-lg border border-blue-200 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+          >
+            Contact Owner
+          </button>
+          <button
+            onClick={onBookNow}
+            disabled={room.status !== "AVAILABLE"}
+            className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-stone-300"
+          >
+            {room.status === "AVAILABLE" ? "Book Now" : "Not Available"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingModal({
+  room,
+  moveInDate,
+  notes,
+  submitting,
+  error,
+  success,
+  onMoveInDateChange,
+  onNotesChange,
+  onSubmit,
+  onClose,
+  onGoToMyRequests,
+}: {
+  room: Room;
+  moveInDate: string;
+  notes: string;
+  submitting: boolean;
+  error: string | null;
+  success: boolean;
+  onMoveInDateChange: (v: string) => void;
+  onNotesChange: (v: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+  onGoToMyRequests: () => void;
+}) {
+  const today = new Date().toISOString().split("T")[0];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-t-2xl bg-white sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
+          <span className="text-sm font-semibold">{success ? "Booking Requested" : "Book This Room"}</span>
+          <button onClick={onClose} className="text-stone-500 hover:text-stone-700">
+            <X size={20} />
+          </button>
+        </div>
+
+        {success ? (
+          <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <Calendar size={22} />
+            </div>
+            <p className="text-sm text-stone-600">
+              Your booking request for <span className="font-semibold">{room.title}</span> has been sent to the
+              landlord. You'll be notified once it's approved.
+            </p>
+            <button
+              onClick={onGoToMyRequests}
+              className="mt-2 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              View My Requests
+            </button>
+          </div>
+        ) : (
+          <div className="p-4">
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-stone-200 p-3">
+              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+                {room.roomImages?.[0] && (
+                  <img
+                    src={resolveImageUrl(room.roomImages[0].imageUrl)}
+                    alt={room.title}
+                    className="h-full w-full object-cover"
+                  />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{room.title}</p>
+                <p className="text-xs text-stone-500">Rs. {room.price.toLocaleString()}/month</p>
+              </div>
+            </div>
+
+            <label className="mb-3 block">
+              <span className="mb-1 block text-xs font-medium text-stone-500">Move-in Date</span>
+              <input
+                type="date"
+                min={today}
+                value={moveInDate}
+                onChange={(e) => onMoveInDateChange(e.target.value)}
+                className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-stone-500">Notes (optional)</span>
+              <textarea
+                value={notes}
+                onChange={(e) => onNotesChange(e.target.value)}
+                rows={3}
+                placeholder="Anything the landlord should know..."
+                className="w-full resize-none rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+
+            {error && <p className="mb-3 text-xs text-rose-500">{error}</p>}
+
+            <button
+              onClick={onSubmit}
+              disabled={submitting}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+            >
+              {submitting && <Loader2 size={14} className="animate-spin" />}
+              {submitting ? "Sending Request..." : "Confirm Booking Request"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContactOwnerModal({
+  room,
+  message,
+  sending,
+  error,
+  sent,
+  onMessageChange,
+  onSend,
+  onClose,
+}: {
+  room: Room;
+  message: string;
+  sending: boolean;
+  error: string | null;
+  sent: boolean;
+  onMessageChange: (v: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-t-2xl bg-white sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
+          <span className="text-sm font-semibold">{sent ? "Message Sent" : "Contact Owner"}</span>
+          <button onClick={onClose} className="text-stone-500 hover:text-stone-700">
+            <X size={20} />
+          </button>
+        </div>
+
+        {sent ? (
+          <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <Send size={20} />
+            </div>
+            <p className="text-sm text-stone-600">
+              Your message about <span className="font-semibold">{room.title}</span> has been sent to{" "}
+              {room.landlord?.fullName || "the landlord"}.
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-2 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="p-4">
+            <div className="mb-4 rounded-xl border border-stone-200 p-3">
+              <p className="text-sm font-semibold">{room.landlord?.fullName || "Landlord"}</p>
+              <p className="text-xs text-stone-500">Re: {room.title}</p>
+            </div>
+
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-stone-500">Message</span>
+              <textarea
+                value={message}
+                onChange={(e) => onMessageChange(e.target.value)}
+                rows={4}
+                placeholder={`Hi, I'm interested in "${room.title}"...`}
+                className="w-full resize-none rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+
+            {error && <p className="mb-3 text-xs text-rose-500">{error}</p>}
+
+            <button
+              onClick={onSend}
+              disabled={sending}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+            >
+              {sending && <Loader2 size={14} className="animate-spin" />}
+              {sending ? "Sending..." : "Send Message"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

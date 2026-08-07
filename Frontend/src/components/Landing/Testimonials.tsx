@@ -1,48 +1,57 @@
+import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
+import { api } from "../../services/api";
 
-const TESTIMONIALS = [
-  {
-    name: "Anisha Shrestha", role: "Tenant, Kathmandu",
-    quote: "Very easy to find a room. The earliest landlord dealt was verified when I was moving to Kathmandu.",
-    avatar: "/images/avatars/testimonial-1.jpg", rating: 5,
-  },
-  {
-    name: "Sundar Thapa", role: "Tenant, Lalitpur",
-    quote: "I'm a landlord managing my properties and I love how landlords can respond quickly and professionally.",
-    avatar: "/images/avatars/testimonial-2.jpg", rating: 4,
-  },
-  {
-    name: "Ramesh K.C.", role: "Tenant, Bhaktapur",
-    quote: "The smart search saved me hours of scrolling. Found a great flat within my budget in just a few days.",
-    avatar: "/images/avatars/testimonial-3.jpg", rating: 5,
-  },
-];
+interface Testimonial {
+  id: number;
+  rating: number;
+  comment: string | null;
+  user?: { fullName: string };
+  room?: { city: string };
+}
 
 export default function Testimonials() {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.getPublicTestimonials();
+        if (res.success) setTestimonials(res.testimonials || []);
+      } catch (e) {
+        console.error("Failed to load testimonials:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // Nothing to show yet — don't render a fake/empty-looking section on a
+  // brand new platform with no reviews.
+  if (!loading && testimonials.length === 0) return null;
+
   return (
-    <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-stone-900 sm:text-3xl">What Our Users Say</h2>
-      </div>
+    <section className="mx-auto max-w-7xl px-6 py-16">
+      <h2 className="text-center text-2xl font-bold text-gray-900">What Our Users Say</h2>
 
       <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {TESTIMONIALS.map((t) => (
-          <div key={t.name} className="rounded-2xl border border-stone-200 bg-white p-5">
-            <div className="flex gap-0.5 text-amber-400">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} size={13} className={i < t.rating ? "fill-amber-400" : "fill-stone-200 text-stone-200"} />
-              ))}
-            </div>
-            <p className="mt-3 text-sm italic text-stone-600">"{t.quote}"</p>
-            <div className="mt-4 flex items-center gap-2.5">
-              <img src={t.avatar} alt={t.name} className="h-8 w-8 rounded-full object-cover" />
-              <div>
-                <p className="text-xs font-semibold text-stone-800">{t.name}</p>
-                <p className="text-[11px] text-stone-400">{t.role}</p>
+        {loading
+          ? Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-40 animate-pulse rounded-2xl bg-gray-100" />
+            ))
+          : testimonials.slice(0, 3).map((t) => (
+              <div key={t.id} className="rounded-2xl border border-gray-200 bg-white p-6">
+                <div className="flex gap-0.5 text-amber-400">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} size={14} fill={i < t.rating ? "currentColor" : "none"} />
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-gray-600">"{t.comment}"</p>
+                <p className="mt-4 text-sm font-semibold text-gray-900">{t.user?.fullName || "Tenant"}</p>
+                {t.room?.city && <p className="text-xs text-gray-400">{t.room.city}</p>}
               </div>
-            </div>
-          </div>
-        ))}
+            ))}
       </div>
     </section>
   );
