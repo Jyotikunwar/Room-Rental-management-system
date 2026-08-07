@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Search,
-
   Plus,
   Building2,
   Users,
@@ -11,9 +10,17 @@ import {
   Wrench,
   MessageSquare,
   CircleDollarSign,
+  Bell,
 } from "lucide-react";
 import { api, type Room, type Booking, type Inquiry, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
+import LandlordProperties from "./properties";
+import LandlordTenants from "./tenants";
+import LandlordMessages from "./messages";
+import LandlordPayments from "./payments";
+import LandlordMaintenance from "./maintenance";
+import LandlordReviews from "./reviews";
+import LandlordSettings from "./settings";
 
 interface LandlordDashboardProps {
   user: User;
@@ -27,6 +34,7 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeRoute, setActiveRoute] = useState<LandlordRoute>("dashboard");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     loadDashboard();
@@ -67,16 +75,35 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
 
     return {
       totalProperties,
+      occupiedRooms,
       totalTenants: uniqueTenantIds.size,
       occupancyRate,
       monthlyRevenue,
     };
   }, [rooms, bookings]);
 
+  // Rooms filtered by the search bar — matches title, location, or city.
+  const filteredRooms = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) ||
+        r.location.toLowerCase().includes(q) ||
+        r.city.toLowerCase().includes(q)
+    );
+  }, [rooms, searchQuery]);
+
+  // Simple badge count: pending bookings + open inquiries need the landlord's attention.
+  const notificationCount = useMemo(
+    () => bookings.filter((b) => b.status === "PENDING").length + inquiries.length,
+    [bookings, inquiries]
+  );
+
   const statCards = [
     { label: "Total Properties", value: stats.totalProperties.toString(), icon: Building2, hint: `${stats.totalProperties} listed` },
     { label: "Total Tenants", value: stats.totalTenants.toString(), icon: Users, hint: "Currently renting" },
-    { label: "Occupancy Rate", value: `${stats.occupancyRate}%`, icon: PieChart, hint: `${stats.totalProperties - stats.totalProperties + rooms.filter(r=>r.status==="BOOKED").length} of ${stats.totalProperties} occupied` },
+    { label: "Occupancy Rate", value: `${stats.occupancyRate}%`, icon: PieChart, hint: `${stats.occupiedRooms} of ${stats.totalProperties} occupied` },
     { label: "Monthly Revenue", value: `Rs. ${stats.monthlyRevenue.toLocaleString()}`, icon: Banknote, hint: "From paid rents" },
   ];
 
@@ -85,10 +112,53 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
       ? "bg-red-50 text-red-600"
       : status === "BOOKED"
       ? "bg-green-50 text-green-600"
-      : "bg-amber-50 text-amber-600";
+      : "bg-amber-50 text-amber-600"; // UNDER_MAINTENANCE
 
   const statusLabel = (status: string) =>
     status === "AVAILABLE" ? "Vacant" : status === "BOOKED" ? "Occupied" : "Maintenance";
+
+  // Exports the landlord's current property list as a CSV file.
+  function handleGenerateReport() {
+    const rows = [
+      ["Property", "Location", "Status", "Rent"],
+      ...rooms.map((r) => [r.title, `${r.location}, ${r.city}`, statusLabel(r.status), r.price.toString()]),
+    ];
+    const csvContent = rows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `property-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  // Route to sub-pages.
+  if (activeRoute === "properties") {
+    return <LandlordProperties user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
+  if (activeRoute === "tenants") {
+    return <LandlordTenants user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
+  if (activeRoute === "messages") {
+    return <LandlordMessages user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
+  if (activeRoute === "payments") {
+    return <LandlordPayments user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
+  if (activeRoute === "maintenance") {
+    return <LandlordMaintenance user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
+  if (activeRoute === "reviews") {
+    return <LandlordReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
+  if (activeRoute === "settings") {
+    return <LandlordSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -99,12 +169,26 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search properties, tenants..."
               className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
             />
           </div>
 
           <div className="flex gap-3">
+            <button
+              onClick={() => setActiveRoute("messages")}
+              className="relative rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50"
+              aria-label="Notifications"
+            >
+              <Bell size={18} />
+              {notificationCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                  {notificationCount}
+                </span>
+              )}
+            </button>
             <button
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               onClick={onLogout}
@@ -129,7 +213,10 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
               <p className="mt-1 text-sm text-gray-500">Here's what's happening with your properties today.</p>
             </div>
             <div className="flex gap-3">
-              <button className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <button
+                onClick={handleGenerateReport}
+                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
                 Generate Report
               </button>
               <button
@@ -190,8 +277,12 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
                       <tr>
                         <td colSpan={4} className="py-8 text-center text-gray-400">No properties listed yet.</td>
                       </tr>
+                    ) : filteredRooms.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-gray-400">No properties match your search.</td>
+                      </tr>
                     ) : (
-                      rooms.slice(0, 5).map((room) => (
+                      filteredRooms.slice(0, 5).map((room) => (
                         <tr key={room.id} className="border-t border-gray-100">
                           <td className="py-3">
                             <div className="flex items-center gap-3">

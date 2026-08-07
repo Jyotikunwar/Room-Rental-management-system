@@ -2,61 +2,67 @@ import { useState } from "react";
 import {
   LayoutDashboard,
   Building2,
+  UserCog,
   Users,
   CreditCard,
   Wrench,
   Mail,
+  Activity,
   Star,
   Settings,
+  LogOut,
   Menu,
   X,
 } from "lucide-react";
 
-export type LandlordRoute =
+export type AdminRoute =
   | "dashboard"
   | "properties"
+  | "landlords"
   | "tenants"
   | "payments"
   | "maintenance"
   | "messages"
+  | "activity"
   | "reviews"
   | "settings";
 
 interface NavItem {
-  key: LandlordRoute;
+  key: AdminRoute;
   label: string;
   icon: typeof LayoutDashboard;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "properties", label: "My Properties", icon: Building2 },
+  { key: "properties", label: "Properties", icon: Building2 },
+  { key: "landlords", label: "Landlords", icon: UserCog },
   { key: "tenants", label: "Tenants", icon: Users },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "maintenance", label: "Maintenance", icon: Wrench },
   { key: "messages", label: "Messages", icon: Mail },
+  { key: "activity", label: "Recent Activity", icon: Activity },
   { key: "reviews", label: "Reviews", icon: Star },
 ];
 
-interface LandlordSidebarProps {
-  active: LandlordRoute;
-  onNavigate: (route: LandlordRoute) => void;
+interface AdminSidebarProps {
+  active: AdminRoute;
+  onNavigate: (route: AdminRoute) => void;
+  onLogout?: () => void;
   brandName?: string;
   brandSubtitle?: string;
 }
 
-// Reusable sidebar for all landlord pages. Sticky on desktop (stays in view
-// while the page content scrolls); collapses into a slide-out drawer with a
-// hamburger toggle on mobile so it doesn't eat screen space there.
-export default function LandlordSidebar({
+export default function AdminSidebar({
   active,
   onNavigate,
+  onLogout,
   brandName = "PropManage",
   brandSubtitle = "LANDLORD PRO",
-}: LandlordSidebarProps) {
+}: AdminSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  function handleNavigate(route: LandlordRoute) {
+  function handleNavigate(route: AdminRoute) {
     onNavigate(route);
     setMobileOpen(false);
   }
@@ -82,7 +88,7 @@ export default function LandlordSidebar({
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 space-y-1 px-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.key;
@@ -103,8 +109,8 @@ export default function LandlordSidebar({
         })}
       </nav>
 
-      {/* Settings pinned to bottom */}
-      <div className="border-t border-white/5 px-3 py-4">
+      {/* Settings + Logout pinned to bottom */}
+      <div className="space-y-1 border-t border-white/5 px-3 py-4">
         <button
           onClick={() => handleNavigate("settings")}
           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -116,13 +122,19 @@ export default function LandlordSidebar({
           <Settings size={18} />
           Settings
         </button>
+        <button
+          onClick={onLogout}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
+        >
+          <LogOut size={18} />
+          Logout
+        </button>
       </div>
     </div>
   );
 
   return (
     <>
-      {/* Mobile top bar with hamburger toggle */}
       <div className="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 lg:hidden">
         <button
           onClick={() => setMobileOpen(true)}
@@ -134,7 +146,6 @@ export default function LandlordSidebar({
         <span className="text-sm font-semibold text-gray-900">{brandName}</span>
       </div>
 
-      {/* Mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
@@ -142,7 +153,6 @@ export default function LandlordSidebar({
         </div>
       )}
 
-      {/* Desktop sidebar — sticky so it stays in view while page content scrolls */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 lg:block">{sidebarContent}</aside>
     </>
   );

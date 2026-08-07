@@ -83,6 +83,7 @@ export interface Booking {
   createdAt: string;
   room?: Room;
   payment?: Payment;
+  tenant?: User;
 }
 
 export interface Payment {
@@ -135,6 +136,90 @@ export interface TenantDashboardData {
   recommendations: RecommendationResult[];
 }
 
+// NOTE: no backend model exists yet for maintenance requests — add this on
+// the server (roomId, description, priority, status, reportedBy, assignedTo,
+// createdAt) before getMaintenanceRequests/updateMaintenanceStatus/
+// getAdminMaintenanceRequests below will work.
+export interface MaintenanceRequest {
+  id: number;
+  roomId: number;
+  room?: Room;
+  description: string;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED";
+  reportedBy?: { fullName: string };
+  assignedTo?: { fullName: string } | null;
+  createdAt: string;
+}
+
+// NOTE: none of this exists yet — needs a new admin activity feed, either
+// assembled server-side from existing tables (bookings, inquiries,
+// maintenance, room creation) or backed by a dedicated ActivityLog table.
+export interface AdminActivityEntry {
+  id: number;
+  category: "PAYMENT" | "MAINTENANCE" | "PROPERTY" | "TENANT" | "LANDLORD" | "MESSAGE";
+  title: string;
+  description: string;
+  createdAt: string;
+  status?: string;
+}
+
+// NOTE: none of this exists yet — a unified admin inbox needs new tables
+// for online presence and merged tenant/landlord threads (Inquiry alone
+// doesn't cover this).
+export interface AdminMessageThread {
+  contactId: number;
+  contactName: string;
+  contactRole: "TENANT" | "LANDLORD";
+  isOnline?: boolean;
+  lastMessage: string;
+  lastMessageAt: string;
+  unread: boolean;
+  avatarUrl?: string;
+}
+
+export interface AdminThreadMessage {
+  id: number;
+  senderId: number;
+  text: string;
+  createdAt: string;
+  fromAdmin: boolean;
+}
+
+export interface AdminContactProfile {
+  id: number;
+  fullName: string;
+  role: "TENANT" | "LANDLORD";
+  phone?: string;
+  email: string;
+  avatarUrl?: string;
+  property?: { title: string; leaseEndDate?: string };
+  recentActivity?: { title: string; date: string }[];
+}
+
+// NOTE: none of this exists yet. Room.reviews only covers property reviews
+// today — "Landlord Reviews" and "Tenant Reviews" as separate target types
+// need a new reviews table (or a targetType column) plus an admin-wide
+// aggregation endpoint.
+export interface AdminReviewEntry {
+  id: number;
+  reviewerName: string;
+  reviewerAvatarUrl?: string;
+  rating: number;
+  comment: string;
+  targetType: "PROPERTY" | "LANDLORD" | "TENANT";
+  targetName?: string;
+  createdAt: string;
+}
+
+export interface AdminReviewStats {
+  totalReviews: number;
+  totalReviewsGrowthPct?: number;
+  averageRating: number;
+  positiveReviews: number; // 4-5 stars
+  negativeReviews: number; // 1-2 stars
+}
+
 // Token helper
 export const getToken = (): string | null => localStorage.getItem("token");
 export const setToken = (token: string) => localStorage.setItem("token", token);
@@ -181,6 +266,38 @@ export const api = {
     });
     return res.json();
   },
+  // NOTE: backend route PATCH /auth/me must exist for this to work.
+  updateProfile: async (data: { fullName?: string; phone?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  // NOTE: doesn't exist yet — needs a route accepting multipart/form-data
+  // and storing the avatar (e.g. alongside room image uploads).
+  uploadAvatar: async (formData: FormData) => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE_URL}/auth/me/avatar`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    return res.json();
+  },
+  // NOTE: doesn't exist yet — needs a route that verifies currentPassword
+  // against the stored hash before updating.
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/me/password`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    return res.json();
+  },
 
   // Rooms
   getRooms: async (params?: Record<string, any>) => {
@@ -197,6 +314,23 @@ export const api = {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  // NOTE: backend route PATCH /rooms/:id must exist for this to work.
+  updateRoom: async (id: number, data: any) => {
+    const res = await fetch(`${API_BASE_URL}/rooms/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  // NOTE: backend route DELETE /rooms/:id must exist for this to work.
+  deleteRoom: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/rooms/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
     });
     return res.json();
   },
@@ -292,6 +426,18 @@ export const api = {
     });
     return res.json();
   },
+  // NOTE: backend route POST /inquiries must accept an explicit receiverId
+  // for the landlord->tenant direction (the existing sendInquiry likely
+  // infers the receiver as the room's landlord, which only covers
+  // tenant->landlord). Adjust the route/body shape to match your backend.
+  replyToInquiry: async (roomId: number, receiverId: number, message: string) => {
+    const res = await fetch(`${API_BASE_URL}/inquiries`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ roomId, receiverId, message }),
+    });
+    return res.json();
+  },
 
   // Reviews
   getRoomReviews: async (roomId: number) => {
@@ -306,10 +452,103 @@ export const api = {
     });
     return res.json();
   },
+  // NOTE: neither of these exist yet — see AdminReviewEntry/AdminReviewStats
+  // comment above. Needs a targetType-aware reviews model.
+  getAdminReviews: async (params?: { target?: string; page?: number; limit?: number }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/reviews?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminReviewStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/reviews/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
 
   // Admin
   getAdminStats: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/dashboard`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  // NOTE: none of these exist yet — see the comment blocks above each
+  // matching interface (Landlords, Payments, Bookings, Maintenance,
+  // Messages, Activity are all new admin-wide aggregation endpoints).
+  getLandlords: async (params?: Record<string, any>) => {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/landlords?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getLandlordStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/landlords/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminBookings: async (params?: Record<string, any>) => {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/bookings?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminPayments: async (params?: Record<string, any>) => {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/payments?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminPaymentStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/payments/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminMaintenanceRequests: async (params?: Record<string, any>) => {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/maintenance?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  assignMaintenanceRequest: async (id: number, assigneeId: number) => {
+    const res = await fetch(`${API_BASE_URL}/maintenance/${id}/assign`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ assigneeId }),
+    });
+    return res.json();
+  },
+  getAdminMessageThreads: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/messages/threads`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  getAdminThreadMessages: async (contactId: number) => {
+    const res = await fetch(`${API_BASE_URL}/admin/messages/threads/${contactId}`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  getAdminContactProfile: async (contactId: number) => {
+    const res = await fetch(`${API_BASE_URL}/admin/contacts/${contactId}`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  sendAdminMessage: async (contactId: number, text: string) => {
+    const res = await fetch(`${API_BASE_URL}/admin/messages/threads/${contactId}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ text }),
+    });
+    return res.json();
+  },
+  getAdminActivity: async (params?: { category?: string; page?: number; limit?: number }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/activity?${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -386,6 +625,25 @@ export const api = {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ bookingId, paymentMethod }),
+    });
+    return res.json();
+  },
+
+  // Maintenance — NOTE: backend model + routes don't exist yet.
+  // Add a MaintenanceRequest table (roomId, description, priority, status,
+  // reportedBy, assignedTo, createdAt) and these two routes before using
+  // the landlord-scoped maintenance page.
+  getMaintenanceRequests: async () => {
+    const res = await fetch(`${API_BASE_URL}/maintenance/landlord`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updateMaintenanceStatus: async (id: number, status: string) => {
+    const res = await fetch(`${API_BASE_URL}/maintenance/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
     });
     return res.json();
   },
