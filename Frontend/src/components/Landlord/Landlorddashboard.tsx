@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Search,
+  Bell,
   Plus,
   Building2,
-  Users,
   PieChart,
   Banknote,
-  ArrowUpRight,
   Wrench,
+  MoreVertical,
   MessageSquare,
   CircleDollarSign,
-  Bell,
 } from "lucide-react";
 import { api, type Room, type Booking, type Inquiry, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
@@ -19,6 +18,7 @@ import LandlordTenants from "./tenants";
 import LandlordMessages from "./messages";
 import LandlordPayments from "./payments";
 import LandlordMaintenance from "./maintenance";
+import LandlordActivity from "./activity";
 import LandlordReviews from "./reviews";
 import LandlordSettings from "./settings";
 
@@ -35,9 +35,11 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
   const [loading, setLoading] = useState(true);
   const [activeRoute, setActiveRoute] = useState<LandlordRoute>("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingMaintenanceCount, setPendingMaintenanceCount] = useState(0);
 
   useEffect(() => {
     loadDashboard();
+    loadMaintenanceCount();
   }, []);
 
   async function loadDashboard() {
@@ -58,31 +60,32 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
     }
   }
 
-  // Derived stats — computed from rooms + bookings since there's no
-  // dedicated /landlord/dashboard stats endpoint yet.
+  async function loadMaintenanceCount() {
+    try {
+      const res = await api.getMaintenanceRequests();
+      if (res?.success) {
+        const open = (res.requests || []).filter((r: any) => r.status === "OPEN").length;
+        setPendingMaintenanceCount(open);
+      }
+    } catch (e) {
+      console.error("Failed to load maintenance count:", e);
+    }
+  }
+
   const stats = useMemo(() => {
     const totalProperties = rooms.length;
     const occupiedRooms = rooms.filter((r) => r.status === "BOOKED").length;
     const occupancyRate = totalProperties > 0 ? Math.round((occupiedRooms / totalProperties) * 100) : 0;
 
-    const uniqueTenantIds = new Set(
-      bookings.filter((b) => b.status === "APPROVED").map((b) => b.tenantId)
-    );
-
-    const monthlyRevenue = bookings
+    // NOTE: sums ALL paid payments — filter by payment.paidAt against the
+    // current month if you want this scoped strictly to "this month".
+    const monthlyEarnings = bookings
       .filter((b) => b.payment?.status === "PAID")
       .reduce((sum, b) => sum + (b.payment?.amount || 0), 0);
 
-    return {
-      totalProperties,
-      occupiedRooms,
-      totalTenants: uniqueTenantIds.size,
-      occupancyRate,
-      monthlyRevenue,
-    };
+    return { totalProperties, occupancyRate, monthlyEarnings };
   }, [rooms, bookings]);
 
-  // Rooms filtered by the search bar — matches title, location, or city.
   const filteredRooms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rooms;
@@ -94,48 +97,24 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
     );
   }, [rooms, searchQuery]);
 
-  // Simple badge count: pending bookings + open inquiries need the landlord's attention.
-  const notificationCount = useMemo(
-    () => bookings.filter((b) => b.status === "PENDING").length + inquiries.length,
-    [bookings, inquiries]
-  );
+  const notificationCount = bookings.filter((b) => b.status === "PENDING").length + inquiries.length;
 
   const statCards = [
-    { label: "Total Properties", value: stats.totalProperties.toString(), icon: Building2, hint: `${stats.totalProperties} listed` },
-    { label: "Total Tenants", value: stats.totalTenants.toString(), icon: Users, hint: "Currently renting" },
-    { label: "Occupancy Rate", value: `${stats.occupancyRate}%`, icon: PieChart, hint: `${stats.occupiedRooms} of ${stats.totalProperties} occupied` },
-    { label: "Monthly Revenue", value: `Rs. ${stats.monthlyRevenue.toLocaleString()}`, icon: Banknote, hint: "From paid rents" },
+    { label: "Total Properties", value: stats.totalProperties.toString(), icon: Building2, iconBg: "bg-blue-50 text-blue-600" },
+    { label: "Occupancy Rate", value: `${stats.occupancyRate}%`, icon: PieChart, iconBg: "bg-purple-50 text-purple-600" },
+    { label: "Monthly Earnings", value: `Rs. ${stats.monthlyEarnings.toLocaleString()}`, icon: Banknote, iconBg: "bg-green-50 text-green-600" },
+    { label: "Pending Maintenance", value: pendingMaintenanceCount.toString(), icon: Wrench, iconBg: "bg-red-50 text-red-600" },
   ];
 
   const statusStyle = (status: string) =>
     status === "AVAILABLE"
-      ? "bg-red-50 text-red-600"
+      ? "bg-blue-50 text-blue-600"
       : status === "BOOKED"
       ? "bg-green-50 text-green-600"
-      : "bg-amber-50 text-amber-600"; // UNDER_MAINTENANCE
+      : "bg-red-50 text-red-600"; // UNDER_MAINTENANCE
 
   const statusLabel = (status: string) =>
     status === "AVAILABLE" ? "Vacant" : status === "BOOKED" ? "Occupied" : "Maintenance";
-
-  // Exports the landlord's current property list as a CSV file.
-  function handleGenerateReport() {
-    const rows = [
-      ["Property", "Location", "Status", "Rent"],
-      ...rooms.map((r) => [r.title, `${r.location}, ${r.city}`, statusLabel(r.status), r.price.toString()]),
-    ];
-    const csvContent = rows
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `property-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
 
   // Route to sub-pages.
   if (activeRoute === "properties") {
@@ -153,6 +132,17 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
   if (activeRoute === "maintenance") {
     return <LandlordMaintenance user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
+  if (activeRoute === "activity") {
+    return (
+      <LandlordActivity
+        user={user}
+        onLogout={onLogout}
+        activeRoute={activeRoute}
+        onNavigate={setActiveRoute}
+        onAddProperty={onAddProperty}
+      />
+    );
+  }
   if (activeRoute === "reviews") {
     return <LandlordReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
@@ -162,7 +152,7 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <LandlordSidebar active={activeRoute} onNavigate={setActiveRoute} />
+      <LandlordSidebar active={activeRoute} onNavigate={setActiveRoute} onLogout={onLogout} user={user} />
       <div className="flex-1">
         <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full sm:max-w-xs">
@@ -190,12 +180,6 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
               )}
             </button>
             <button
-              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              onClick={onLogout}
-            >
-              Logout
-            </button>
-            <button
               onClick={onAddProperty}
               className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
             >
@@ -207,25 +191,9 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
 
         <main className="p-6">
           {/* Welcome */}
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.fullName?.split(" ")[0] || "Landlord"}!</h1>
-              <p className="mt-1 text-sm text-gray-500">Here's what's happening with your properties today.</p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={handleGenerateReport}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Generate Report
-              </button>
-              <button
-                onClick={() => setActiveRoute("messages")}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Message Tenants
-              </button>
-            </div>
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.fullName?.split(" ")[0] || "Landlord"}!</h1>
+            <p className="mt-1 text-sm text-gray-500">Here's an overview of your portfolio today.</p>
           </div>
 
           {/* Stat cards */}
@@ -235,14 +203,12 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
               return (
                 <div key={card.label} className="rounded-2xl border border-gray-200 bg-white p-5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{card.label}</p>
-                    <Icon size={18} className="text-gray-400" />
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{card.label}</p>
+                    <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.iconBg}`}>
+                      <Icon size={14} />
+                    </div>
                   </div>
                   <p className="mt-3 text-3xl font-bold text-gray-900">{loading ? "—" : card.value}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-                    <ArrowUpRight size={12} />
-                    {card.hint}
-                  </p>
                 </div>
               );
             })}
@@ -253,8 +219,8 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
             <div className="rounded-2xl border border-gray-200 bg-white p-5 xl:col-span-2">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-gray-900">Property Overview</h2>
-                <button onClick={() => setActiveRoute("properties")} className="text-sm font-medium text-gray-500 hover:text-gray-900">
-                  View All →
+                <button onClick={() => setActiveRoute("properties")} className="text-sm font-medium text-blue-600 hover:text-blue-700">
+                  View All
                 </button>
               </div>
 
@@ -263,66 +229,64 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                       <th className="pb-3 font-medium">Property</th>
+                      <th className="pb-3 font-medium">Tenant</th>
                       <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium">Current Rent</th>
+                      <th className="pb-3 font-medium">Last Payment</th>
                       <th className="pb-3 font-medium text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={4} className="py-8 text-center text-gray-400">Loading properties...</td>
+                        <td colSpan={5} className="py-8 text-center text-gray-400">Loading properties...</td>
                       </tr>
                     ) : rooms.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="py-8 text-center text-gray-400">No properties listed yet.</td>
+                        <td colSpan={5} className="py-8 text-center text-gray-400">No properties listed yet.</td>
                       </tr>
                     ) : filteredRooms.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="py-8 text-center text-gray-400">No properties match your search.</td>
+                        <td colSpan={5} className="py-8 text-center text-gray-400">No properties match your search.</td>
                       </tr>
                     ) : (
-                      filteredRooms.slice(0, 5).map((room) => (
-                        <tr key={room.id} className="border-t border-gray-100">
-                          <td className="py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100">
-                                <Building2 size={16} className="text-gray-500" />
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900">{room.title}</p>
-                                <p className="text-xs text-gray-400">{room.location}, {room.city}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle(room.status)}`}>
-                              • {statusLabel(room.status)}
-                            </span>
-                          </td>
-                          <td className="py-3 text-gray-700">
-                            {room.status === "BOOKED" ? `Rs. ${room.price.toLocaleString()}` : "—"}
-                          </td>
-                          <td className="py-3 text-right">
-                            <button
-                              onClick={() => setActiveRoute("properties")}
-                              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              Details
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      filteredRooms.slice(0, 5).map((room) => {
+                        const roomBooking = bookings.find((b) => b.roomId === room.id && b.status === "APPROVED");
+                        return (
+                          <tr key={room.id} className="border-t border-gray-100">
+                            <td className="py-3 font-medium text-gray-900">{room.title}</td>
+                            <td className="py-3 text-gray-700">{roomBooking?.tenant?.fullName || "—"}</td>
+                            <td className="py-3">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle(room.status)}`}>
+                                {statusLabel(room.status)}
+                              </span>
+                            </td>
+                            <td className="py-3 text-gray-500">
+                              {roomBooking?.payment?.paidAt
+                                ? new Date(roomBooking.payment.paidAt).toLocaleDateString()
+                                : "—"}
+                            </td>
+                            <td className="py-3 text-right">
+                              <button
+                                onClick={() => setActiveRoute("properties")}
+                                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                              >
+                                Details
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Recent activity — combines latest bookings and inquiries */}
+            {/* Recent activity */}
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-gray-900">Recent Activity</h2>
+                <MoreVertical size={16} className="text-gray-400" />
               </div>
 
               <div className="space-y-4">
@@ -332,66 +296,47 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
                   <p className="text-sm text-gray-400">No recent activity yet.</p>
                 ) : (
                   <>
-                    {bookings.slice(0, 2).map((booking) => (
-                      <ActivityItem
-                        key={`booking-${booking.id}`}
-                        icon={CircleDollarSign}
-                        iconColor="text-green-600"
-                        title={`Booking request for ${booking.room?.title || "a room"}`}
-                        subtitle={`Status: ${booking.status}`}
-                        time={new Date(booking.createdAt).toLocaleDateString()}
-                      />
-                    ))}
                     {inquiries.slice(0, 2).map((inquiry) => (
-                      <ActivityItem
-                        key={`inquiry-${inquiry.id}`}
-                        icon={MessageSquare}
-                        iconColor="text-blue-600"
-                        title={`New message from ${inquiry.sender?.fullName || "a tenant"}`}
-                        subtitle={inquiry.message}
-                        time={new Date(inquiry.createdAt).toLocaleDateString()}
-                      />
+                      <div key={`inquiry-${inquiry.id}`} className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                          <MessageSquare size={14} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900">New message from {inquiry.sender?.fullName || "a tenant"}</p>
+                          <p className="truncate text-xs text-gray-500">{inquiry.message}</p>
+                          <p className="mt-0.5 text-xs text-gray-400">{new Date(inquiry.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {bookings.slice(0, 2).map((booking) => (
+                      <div key={`booking-${booking.id}`} className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-50 text-green-600">
+                          <CircleDollarSign size={14} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900">
+                            {booking.payment?.status === "PAID" ? "Payment Received" : "Booking Update"}
+                          </p>
+                          <p className="truncate text-xs text-gray-500">
+                            {booking.room?.title || "A room"} — {booking.status}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-400">{new Date(booking.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
                     ))}
                   </>
                 )}
               </div>
 
               <button
-                onClick={() => setActiveRoute("messages")}
+                onClick={() => setActiveRoute("activity")}
                 className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
               >
-                View All Notifications
+                View All Activity
               </button>
             </div>
           </div>
         </main>
-      </div>
-    </div>
-  );
-}
-
-function ActivityItem({
-  icon: Icon,
-  iconColor,
-  title,
-  subtitle,
-  time,
-}: {
-  icon: typeof Wrench;
-  iconColor: string;
-  title: string;
-  subtitle?: string;
-  time: string;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-50 ${iconColor}`}>
-        <Icon size={15} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-gray-900">{title}</p>
-        {subtitle && <p className="truncate text-xs text-gray-500">{subtitle}</p>}
-        <p className="mt-0.5 text-xs text-gray-400">{time}</p>
       </div>
     </div>
   );
