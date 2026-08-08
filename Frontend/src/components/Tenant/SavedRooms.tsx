@@ -92,8 +92,12 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
     api
       .getFavorites()
       .then((res) => {
-        if (res.success) setFavorites(res.favorites || []);
-        else setError(res.message || "Failed to load saved rooms");
+        if (res && res.success === false) {
+          setError(res.message || "Failed to load saved rooms");
+          return;
+        }
+        const list = Array.isArray(res) ? res : res?.favorites || res?.data || [];
+        setFavorites(list);
       })
       .catch(() => setError("Failed to load saved rooms"))
       .finally(() => setLoading(false));
@@ -109,7 +113,7 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
     setFavorites((f) => f.filter((x) => x.id !== favoriteId));
     try {
       const res = await api.toggleFavorite(roomId);
-      if (!res.success) setFavorites(prev);
+      if (res && res.success === false) setFavorites(prev);
     } catch {
       setFavorites(prev);
     } finally {
@@ -159,8 +163,8 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
         moveInDate,
         notes: bookingNotes || undefined,
       });
-      if (res.success) setBookingSuccess(true);
-      else setBookingError(res.message || "Failed to create booking");
+      if (res && res.success === false) setBookingError(res.message || "Failed to create booking");
+      else setBookingSuccess(true);
     } catch {
       setBookingError("Failed to create booking. Please try again.");
     } finally {
@@ -197,13 +201,9 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
     setContactSending(true);
     setContactError(null);
     try {
-      const res = await api.sendMessage({
-        receiverId: contactRoom.landlordId,
-        roomId: contactRoom.id,
-        message: contactMessage.trim(),
-      });
-      if (res.success) setContactSent(true);
-      else setContactError(res.message || "Failed to send message");
+      const res = await api.sendInquiry(contactRoom.id, contactMessage.trim());
+      if (res && res.success === false) setContactError(res.message || "Failed to send message");
+      else setContactSent(true);
     } catch {
       setContactError("Failed to send message. Please try again.");
     } finally {
@@ -429,15 +429,6 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
                     </p>
 
                     <div className="mt-2 flex items-center gap-3 text-[11px] text-stone-500">
-                      {room.securityDeposit != null && (
-                        <span className="flex items-center gap-1">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="2" y="7" width="20" height="14" rx="2" />
-                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-                          </svg>
-                          Dep: Rs. {room.securityDeposit.toLocaleString()}
-                        </span>
-                      )}
                       <span className="flex items-center gap-1">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
@@ -602,11 +593,6 @@ function RoomDetailsModal({
             </p>
             <p className="mb-4 text-xl font-bold text-blue-700">
               Rs. {room.price.toLocaleString()}/month
-              {room.securityDeposit != null && (
-                <span className="ml-2 text-sm font-normal text-stone-500">
-                  + Rs. {room.securityDeposit.toLocaleString()} deposit
-                </span>
-              )}
             </p>
 
             {room.description && <p className="mb-4 text-sm text-stone-600">{room.description}</p>}

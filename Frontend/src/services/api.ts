@@ -29,12 +29,17 @@ export interface Room {
   description?: string;
   city: string;
   location: string;
+  address?: string;              // matches Room.address in schema
+  latitude?: number;
+  longitude?: number;
   roomType: "SINGLE" | "DOUBLE" | "FLAT" | "APARTMENT";
   price: number;
+  securityDeposit?: number;      // matches Room.securityDeposit
+  availableFrom?: string;
   status: "AVAILABLE" | "BOOKED" | "UNDER_MAINTENANCE";
   createdAt?: string;
   roomImages?: RoomImage[];
-  roomAmenities?: { amenity: Amenity }[];
+  roomAmenities?: { amenity: Amenity }[]
   reviews?: { id: number; rating: number; comment?: string; user?: { fullName: string } }[];
   favorites?: { id: number }[];
   landlord?: { id: number; fullName: string; phone?: string; email?: string };
@@ -71,6 +76,18 @@ export interface Inquiry {
   room?: Room;
 }
 
+// Matches the Complaint model — used for maintenance requests on a booking.
+export interface Complaint {
+  id: number;
+  bookingId: number;
+  userId: number;
+  title: string;
+  description: string;
+  status: "PENDING" | "IN_PROGRESS" | "RESOLVED" | "REJECTED";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Booking {
   id: number;
   roomId: number;
@@ -83,11 +100,15 @@ export interface Booking {
   createdAt: string;
   room?: Room;
   payment?: Payment;
+
   tenant?: User;
   // NOTE: neither field exists in the backend yet — needed for the new
   // Tenants page's "New Tenant Requests" table (credit score, application docs).
   creditScore?: number;
   documentUrl?: string;
+
+  complaints?: Complaint[];  
+
 }
 
 export interface Payment {
@@ -140,10 +161,18 @@ export interface TenantDashboardData {
   recommendations: RecommendationResult[];
 }
 
+
 // NOTE: no backend model exists yet for maintenance requests — add this on
 // the server (roomId, description, priority, status, reportedBy, assignedTo,
 // issueType, createdAt) before getMaintenanceRequests/updateMaintenanceStatus/
 // getAdminMaintenanceRequests below will work.
+
+// NOTE: no backend model exists yet for landlord-side maintenance requests —
+// add this on the server (roomId, description, priority, status, reportedBy,
+// assignedTo, createdAt) before getMaintenanceRequests/updateMaintenanceStatus/
+// getAdminMaintenanceRequests below will work. (Tenant-side maintenance now
+// uses the real Complaint model above via reportMaintenanceIssue.)
+
 export interface MaintenanceRequest {
   id: number;
   roomId: number;
@@ -699,10 +728,18 @@ export const api = {
     return res.json();
   },
 
+
   // Maintenance — NOTE: backend model + routes don't exist yet.
   // Add a MaintenanceRequest table (roomId, description, priority, status,
   // reportedBy, assignedTo, issueType, createdAt) and these two routes
   // before using the landlord-scoped maintenance page.
+
+  // Maintenance (landlord-side) — NOTE: backend model + routes don't exist
+  // yet. Add a MaintenanceRequest table (roomId, description, priority,
+  // status, reportedBy, assignedTo, createdAt) and these two routes before
+  // using the landlord-scoped maintenance page. Tenant-side maintenance
+  // uses the real Complaint model via reportMaintenanceIssue below instead.
+
   getMaintenanceRequests: async () => {
     const res = await fetch(`${API_BASE_URL}/maintenance/landlord`, {
       headers: getAuthHeaders(),
@@ -717,4 +754,41 @@ export const api = {
     });
     return res.json();
   },
+
+  // Tenant — composite endpoints (dashboard/requests/rental/payments)
+  getMyRequests: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/requests`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  cancelRequest: async (bookingId: number) => {
+    const res = await fetch(`${API_BASE_URL}/tenant/requests/${bookingId}/cancel`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getCurrentRental: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/rental`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  reportMaintenanceIssue: async (bookingId: number, title: string, description: string) => {
+    const res = await fetch(`${API_BASE_URL}/tenant/rental/maintenance`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ bookingId, title, description }),
+    });
+    return res.json();
+  },
+  getPaymentsSummary: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/payments/summary`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  
 };
