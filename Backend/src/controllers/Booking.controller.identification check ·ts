@@ -1,0 +1,15 @@
+// ADD this check at the top of createBooking in Backend/src/controllers/booking.controller.ts
+// (right after you read req.user, before creating the Booking record).
+// This blocks booking if the tenant hasn't provided identification yet.
+
+const tenant = await prisma.user.findUnique({ where: { id: req.user!.id } });
+
+if (!tenant?.idType || !tenant?.idNumber || !tenant?.idDocumentUrl) {
+  return res.status(403).json({
+    success: false,
+    message: "Please add your identification details and upload a photo of your ID in Settings before booking a room.",
+    code: "IDENTIFICATION_REQUIRED",
+  });
+}
+
+// ... existing createBooking logic continues below (create the Booking record) ...
