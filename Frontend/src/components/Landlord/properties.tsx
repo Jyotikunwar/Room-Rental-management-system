@@ -16,6 +16,8 @@ interface LandlordPropertiesProps {
   onLogout?: () => void;
   activeRoute: LandlordRoute;
   onNavigate: (route: LandlordRoute) => void;
+  /** If true when this page mounts, the Add Property modal opens automatically. */
+  openAddModalOnMount?: boolean;
 }
 
 type RoomFormState = {
@@ -53,7 +55,12 @@ const STATUS_OPTIONS: { value: Room["status"]; label: string }[] = [
   { value: "UNDER_MAINTENANCE", label: "Maintenance" },
 ];
 
-export default function LandlordProperties({ user, onLogout, activeRoute, onNavigate }: LandlordPropertiesProps) {
+export default function LandlordProperties({
+  onLogout,
+  activeRoute,
+  onNavigate,
+  openAddModalOnMount = false,
+}: LandlordPropertiesProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,6 +74,15 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
   useEffect(() => {
     loadRooms();
   }, []);
+
+  // Open straight into the add-property modal when navigated here from
+  // the dashboard's "Add Property" button.
+  useEffect(() => {
+    if (openAddModalOnMount) {
+      openAddModal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAddModalOnMount]);
 
   async function loadRooms() {
     setLoading(true);

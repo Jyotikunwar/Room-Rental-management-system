@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Bell,
-  Plus,
   UserPlus,
   Receipt,
   Send,
@@ -32,7 +31,6 @@ import AdminSettings from "./adminSettings";
 interface AdminDashboardProps {
   user: User;
   onLogout?: () => void;
-  onAddProperty?: () => void;
 }
 
 // NOTE: shape assumed from the mockup — your real getAdminStats() response
@@ -75,7 +73,7 @@ const EMPTY_STATS: AdminDashboardStats = {
   recentMoveOuts: 0,
 };
 
-export default function AdminDashboard({ user, onLogout, onAddProperty }: AdminDashboardProps) {
+export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
@@ -184,7 +182,6 @@ export default function AdminDashboard({ user, onLogout, onAddProperty }: AdminD
   }, [bookings, inquiries]);
 
   const quickActions = [
-    { label: "Add Property", icon: Plus, onClick: onAddProperty },
     { label: "Add Tenant", icon: UserPlus, onClick: () => setActiveRoute("tenants") },
     { label: "Record Payment", icon: Receipt, onClick: () => setActiveRoute("payments") },
     { label: "Send Notice", icon: Send, onClick: () => setActiveRoute("messages") },
@@ -192,9 +189,7 @@ export default function AdminDashboard({ user, onLogout, onAddProperty }: AdminD
 
   // Route to sub-pages.
   if (activeRoute === "properties") {
-    return (
-      <AdminProperties user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} onAddProperty={onAddProperty} />
-    );
+    return <AdminProperties user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "landlords") {
     return <AdminLandlords user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
@@ -212,10 +207,10 @@ export default function AdminDashboard({ user, onLogout, onAddProperty }: AdminD
     return <AdminMessages user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "activity") {
-    return <AdminActivity user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} onAddProperty={onAddProperty} />;
+    return <AdminActivity user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "reviews") {
-    return <AdminReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} onAddProperty={onAddProperty} />;
+    return <AdminReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "settings") {
     return <AdminSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
@@ -249,13 +244,6 @@ export default function AdminDashboard({ user, onLogout, onAddProperty }: AdminD
                   {notificationCount}
                 </span>
               )}
-            </button>
-            <button
-              onClick={onAddProperty}
-              className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              <Plus size={16} />
-              Add Property
             </button>
           </div>
         </header>

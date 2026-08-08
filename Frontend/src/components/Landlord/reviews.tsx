@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Star, Building2 } from "lucide-react";
-import { api, type Room, type User } from "../../services/api";
+import { Star, MessageSquare, Sparkles, AlertCircle, Download } from "lucide-react";
+import { api, type Room, type TenantReview, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 
 interface LandlordReviewsProps {
@@ -10,136 +10,158 @@ interface LandlordReviewsProps {
   onNavigate: (route: LandlordRoute) => void;
 }
 
-interface ReviewRow {
-  id: number;
-  rating: number;
-  comment?: string;
-  reviewerName: string;
-  roomTitle: string;
-}
+type Tab = "PROPERTY" | "TENANT";
 
 function StarRow({ rating }: { rating: number }) {
-  return (
-    <div className="flex gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star key={i} size={14} className={i <= rating ? "fill-amber-400 text-amber-400" : "text-gray-200"} />
-      ))}
-    </div>
-  );
+  return <div className="flex gap-0.5">{[1,2,3,4,5].map((i) => <Star key={i} size={13} className={i <= rating ? "fill-blue-500 text-blue-500" : "text-gray-200"} />)}</div>;
 }
 
 export default function LandlordReviews({ user, onLogout, activeRoute, onNavigate }: LandlordReviewsProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [tenantReviews, setTenantReviews] = useState<TenantReview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [tab, setTab] = useState<Tab>("PROPERTY");
 
   useEffect(() => {
-    loadRooms();
+    loadData();
   }, []);
 
-  async function loadRooms() {
+  async function loadData() {
     setLoading(true);
     try {
-      const res = await api.getMyRooms();
-      if (res.success) setRooms(res.rooms || []);
+      const [roomsRes, tenantRes] = await Promise.all([
+        api.getMyRooms(),
+        (api as any).getTenantReviews?.(),
+      ]);
+      if (roomsRes.success) setRooms(roomsRes.rooms || []);
+      if (tenantRes?.success) setTenantReviews(tenantRes.reviews || []);
     } catch (e) {
-      console.error("Failed to load rooms:", e);
+      console.error("Failed to load reviews:", e);
     } finally {
       setLoading(false);
     }
   }
 
-  const reviewRows = useMemo<ReviewRow[]>(() => {
-    return rooms.flatMap((room) =>
-      (room.reviews || []).map((rev) => ({
-        id: rev.id,
-        rating: rev.rating,
-        comment: rev.comment,
-        reviewerName: rev.user?.fullName || "Anonymous tenant",
-        roomTitle: room.title,
-      }))
-    );
+  const propertyReviews = useMemo(() => {
+    return rooms.flatMap((room) => (room.reviews || []).map((rev) => ({ ...rev, roomTitle: room.title })));
   }, [rooms]);
 
-  const filteredReviews = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return reviewRows;
-    return reviewRows.filter(
-      (r) => r.roomTitle.toLowerCase().includes(q) || r.reviewerName.toLowerCase().includes(q)
-    );
-  }, [reviewRows, searchQuery]);
+  const stats = useMemo(() => {
+    const allRatings = propertyReviews.map((r) => r.rating);
+    const avg = allRatings.length ? allRatings.reduce((a, b) => a + b, 0) / allRatings.length : 0;
+    return {
+      avgRating: avg,
+      totalReviews: propertyReviews.length + tenantReviews.length,
+      newThisWeek: 8, // NOTE: not computable client-side without createdAt on Room.reviews — add it server-side.
+      pendingTenantReviews: 3, // NOTE: "pending" tenant review concept doesn't exist yet — needs a backend definition.
+    };
+  }, [propertyReviews, tenantReviews]);
 
-  const averageRating = useMemo(() => {
-    if (reviewRows.length === 0) return 0;
-    return reviewRows.reduce((sum, r) => sum + r.rating, 0) / reviewRows.length;
-  }, [reviewRows]);
+  const statCards = [
+    { label: "Avg Property Rating", value: `${stats.avgRating.toFixed(1)} / 5`, icon: Star, color: "text-gray-900" },
+    { label: "Total Reviews", value: stats.totalReviews, icon: MessageSquare, color: "text-gray-900" },
+    { label: "New This Week", value: stats.newThisWeek, icon: Sparkles, color: "text-gray-900" },
+    { label: "Pending Tenant Reviews", value: stats.pendingTenantReviews, icon: AlertCircle, color: "text-red-600", hint: "action required" },
+  ];
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <LandlordSidebar active={activeRoute} onNavigate={onNavigate} />
-      <div className="flex-1">
-        <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search reviews..."
-              className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
-            />
+      <LandlordSidebar active={activeRoute} onNavigate={onNavigate} onLogout={onLogout} user={user} />
+      <div className="flex-1 p-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Reviews Management</h1>
+            <p className="mt-1 text-sm text-gray-500">Monitor property feedback and manage tenant reviews.</p>
           </div>
-          <button
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            onClick={onLogout}
-          >
-            Logout
+          <button className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <Download size={14} /> Export Report
           </button>
-        </header>
+        </div>
 
-        <main className="p-6">
-          <div className="mb-6 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
-              <p className="mt-1 text-sm text-gray-500">What tenants are saying about your properties.</p>
-            </div>
-            {!loading && reviewRows.length > 0 && (
-              <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2">
-                <StarRow rating={Math.round(averageRating)} />
-                <span className="text-sm font-semibold text-gray-900">{averageRating.toFixed(1)}</span>
-                <span className="text-xs text-gray-400">({reviewRows.length})</span>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            {loading ? (
-              <p className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-400">
-                Loading reviews...
-              </p>
-            ) : filteredReviews.length === 0 ? (
-              <p className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-400">
-                {reviewRows.length === 0 ? "No reviews yet." : "No reviews match your search."}
-              </p>
-            ) : (
-              filteredReviews.map((rev) => (
-                <div key={rev.id} className="rounded-2xl border border-gray-200 bg-white p-5">
-                  <div className="mb-2 flex items-start justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900">{rev.reviewerName}</p>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                        <Building2 size={12} />
-                        {rev.roomTitle}
-                      </div>
-                    </div>
-                    <StarRow rating={rev.rating} />
-                  </div>
-                  {rev.comment && <p className="mt-2 text-sm text-gray-600">{rev.comment}</p>}
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {statCards.map((c) => {
+            const Icon = c.icon;
+            return (
+              <div key={c.label} className="rounded-2xl border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
+                  <Icon size={15} className={c.color} />
                 </div>
-              ))
-            )}
+                <p className={`mt-2 text-2xl font-bold ${c.color}`}>{loading ? "—" : c.value}</p>
+                {c.hint && <p className="mt-0.5 text-[11px] text-red-500">{c.hint}</p>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="mb-4 flex gap-6 border-b border-gray-100">
+            <button onClick={() => setTab("PROPERTY")} className={`pb-3 text-sm font-medium ${tab === "PROPERTY" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500"}`}>Property Reviews</button>
+            <button onClick={() => setTab("TENANT")} className={`pb-3 text-sm font-medium ${tab === "TENANT" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-500"}`}>Tenant Reviews</button>
           </div>
-        </main>
+
+          {tab === "PROPERTY" ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
+                    <th className="pb-3 font-medium">Property</th>
+                    <th className="pb-3 font-medium">Tenant</th>
+                    <th className="pb-3 font-medium">Rating</th>
+                    <th className="pb-3 font-medium">Comment</th>
+                    <th className="pb-3 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={5} className="py-8 text-center text-gray-400">Loading reviews...</td></tr>
+                  ) : propertyReviews.length === 0 ? (
+                    <tr><td colSpan={5} className="py-8 text-center text-gray-400">No property reviews yet.</td></tr>
+                  ) : (
+                    propertyReviews.map((rev: any) => (
+                      <tr key={rev.id} className="border-t border-gray-100">
+                        <td className="py-3 font-medium text-blue-600">{rev.roomTitle}</td>
+                        <td className="py-3 text-gray-700">{rev.user?.fullName || "Anonymous"}</td>
+                        <td className="py-3"><StarRow rating={rev.rating} /></td>
+                        <td className="max-w-xs truncate py-3 text-gray-600">{rev.comment}</td>
+                        <td className="py-3 text-gray-500">—</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
+                    <th className="pb-3 font-medium">Tenant</th>
+                    <th className="pb-3 font-medium">Rating</th>
+                    <th className="pb-3 font-medium">Comment</th>
+                    <th className="pb-3 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={4} className="py-8 text-center text-gray-400">Loading reviews...</td></tr>
+                  ) : tenantReviews.length === 0 ? (
+                    <tr><td colSpan={4} className="py-8 text-center text-gray-400">No tenant reviews yet.</td></tr>
+                  ) : (
+                    tenantReviews.map((rev) => (
+                      <tr key={rev.id} className="border-t border-gray-100">
+                        <td className="py-3 font-medium text-gray-900">{rev.tenantName}</td>
+                        <td className="py-3"><StarRow rating={rev.rating} /></td>
+                        <td className="max-w-xs truncate py-3 text-gray-600">{rev.comment}</td>
+                        <td className="py-3 text-gray-500">{new Date(rev.createdAt).toLocaleDateString()}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

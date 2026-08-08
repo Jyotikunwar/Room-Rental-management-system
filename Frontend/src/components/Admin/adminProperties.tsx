@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Building2, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Bell } from "lucide-react";
+import { Search, Building2, ChevronDown, ChevronLeft, ChevronRight, Pencil, Bell } from "lucide-react";
 import { api, type Room, type User } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
 
@@ -8,7 +8,6 @@ interface AdminPropertiesProps {
   onLogout?: () => void;
   activeRoute: AdminRoute;
   onNavigate: (route: AdminRoute) => void;
-  onAddProperty?: () => void;
 }
 
 const PAGE_SIZE = 4;
@@ -32,7 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
   RESERVED: "Reserved",
 };
 
-export default function AdminProperties({ onLogout, activeRoute, onNavigate, onAddProperty }: AdminPropertiesProps) {
+export default function AdminProperties({ activeRoute, onNavigate, onLogout }: AdminPropertiesProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [headerSearch, setHeaderSearch] = useState("");
@@ -109,13 +108,6 @@ export default function AdminProperties({ onLogout, activeRoute, onNavigate, onA
           <div className="flex gap-3">
             <button className="rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50" aria-label="Notifications">
               <Bell size={18} />
-            </button>
-            <button
-              onClick={onAddProperty}
-              className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              <Plus size={16} />
-              Add Property
             </button>
           </div>
         </header>
