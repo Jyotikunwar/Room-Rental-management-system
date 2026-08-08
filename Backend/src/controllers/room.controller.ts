@@ -4,6 +4,22 @@ import { createRoomSchema, updateRoomSchema } from "../validations/room.validati
 import { AuthRequest } from "../middleware/auth.middleware";
 import { getSimilarRoomRecommendations } from "../services/recommendation.service";
 
+// Resolves a list of amenity NAMES (e.g. "WiFi", "Parking") to Amenity row
+// ids, creating any that don't exist yet. Frontend sends names, not ids.
+async function resolveAmenityIds(names?: string[]): Promise<number[]> {
+  if (!names || names.length === 0) return [];
+  const cleaned = Array.from(new Set(names.map((n) => n.trim()).filter(Boolean)));
+  const amenities = await Promise.all(
+    cleaned.map((name) =>
+      prisma.amenity.upsert({
+        where: { name },
+        update: {},
+        create: { name },
+      })
+    )
+  );
+  return amenities.map((a) => a.id);
+}
 
 // POST /rooms  (protected - LANDLORD only)
 export const createRoom = async (req: AuthRequest, res: Response) => {
@@ -17,14 +33,15 @@ export const createRoom = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { amenityIds, availableFrom, ...roomData } = parsed.data;
+    const { amenities, availableFrom, ...roomData } = parsed.data;
+    const amenityIds = await resolveAmenityIds(amenities);
 
     const room = await prisma.room.create({
       data: {
         ...roomData,
         landlordId: req.user!.id,
         availableFrom: availableFrom ? new Date(availableFrom) : undefined,
-        roomAmenities: amenityIds
+        roomAmenities: amenityIds.length
           ? { create: amenityIds.map((id) => ({ amenityId: id })) }
           : undefined,
       },
@@ -61,7 +78,6 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
       sortBy,
     } = req.query;
 
-    // Collect requested amenity names
     const requestedAmenities: string[] = [];
     if (amenities) {
       const list = String(amenities).split(",").map((a) => a.trim().toLowerCase());
@@ -73,7 +89,6 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
     if (balcony === "true") requestedAmenities.push("balcony");
     if (kitchen === "true") requestedAmenities.push("kitchen");
 
-    // Build Prisma AND conditions for Amenities filtering
     const amenityFilters = requestedAmenities.map((amenityName) => ({
       roomAmenities: {
         some: {
@@ -84,7 +99,6 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
       },
     }));
 
-    // Sorting logic
     let orderBy: any = { createdAt: "desc" };
     if (sortBy === "price_asc") orderBy = { price: "asc" };
     if (sortBy === "price_desc") orderBy = { price: "desc" };
@@ -93,7 +107,7 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
     const rooms = await prisma.room.findMany({
       where: {
         AND: [
-          ...(city ? [{ city: { equals: String(city), mode: "insensitive" as const } }] : []),
+          ...(city ? [{ city: { equals: String(city) } }] : []),
           ...(location ? [{ location: { contains: String(location), mode: "insensitive" as const } }] : []),
           ...(roomType ? [{ roomType: roomType as any }] : []),
           ...(status ? [{ status: status as any }] : [{ status: "AVAILABLE" as const }]),
@@ -137,7 +151,6 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
   }
 };
 
-
 // GET /rooms/:id  (public)
 export const getRoomById = async (req: AuthRequest, res: Response) => {
   try {
@@ -168,8 +181,9 @@ export const getRoomById = async (req: AuthRequest, res: Response) => {
 export const updateRoom = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const roomId = Number(id);
 
-    const existingRoom = await prisma.room.findUnique({ where: { id: Number(id) } });
+    const existingRoom = await prisma.room.findUnique({ where: { id: roomId } });
     if (!existingRoom) {
       return res.status(404).json({ success: false, message: "Room not found" });
     }
@@ -186,10 +200,23 @@ export const updateRoom = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { amenityIds, availableFrom, ...roomData } = parsed.data;
+    const { amenities, availableFrom, ...roomData } = parsed.data;
+
+    // Only touch amenities if the request actually included that field —
+    // this is what was missing before: amenityIds/amenities was parsed but
+    // never written back to the database on update.
+    if (amenities !== undefined) {
+      const amenityIds = await resolveAmenityIds(amenities);
+      await prisma.roomAmenity.deleteMany({ where: { roomId } });
+      if (amenityIds.length > 0) {
+        await prisma.roomAmenity.createMany({
+          data: amenityIds.map((amenityId) => ({ roomId, amenityId })),
+        });
+      }
+    }
 
     const room = await prisma.room.update({
-      where: { id: Number(id) },
+      where: { id: roomId },
       data: {
         ...roomData,
         ...(availableFrom && { availableFrom: new Date(availableFrom) }),
@@ -231,7 +258,14 @@ export const getMyRooms = async (req: AuthRequest, res: Response) => {
   try {
     const rooms = await prisma.room.findMany({
       where: { landlordId: req.user!.id },
-      include: { roomImages: true, bookings: true },
+      include: {
+        roomImages: true,
+        // NOTE: this was missing before — without it, room.roomAmenities was
+        // always undefined and the "Edit Existing Property" form could never
+        // prefill the amenity checkboxes.
+        roomAmenities: { include: { amenity: true } },
+        bookings: true,
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -283,10 +317,13 @@ export const uploadRoomImages = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ success: false, message: "Not authorized to upload images for this room" });
     }
 
+    // If this room has no images yet, the first uploaded file becomes primary.
+    const existingCount = await prisma.roomImage.count({ where: { roomId: Number(id) } });
+
     const imageRecords = files.map((file, index) => ({
       roomId: Number(id),
       imageUrl: `/uploads/${file.filename}`,
-      isPrimary: index === 0,
+      isPrimary: existingCount === 0 && index === 0,
     }));
 
     await prisma.roomImage.createMany({
@@ -307,4 +344,3 @@ export const uploadRoomImages = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: "Failed to upload images" });
   }
 };
-

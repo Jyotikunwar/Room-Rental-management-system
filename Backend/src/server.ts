@@ -21,7 +21,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve uploaded room images statically, e.g. http://localhost:5000/uploads/rooms/room-123.jpg
+// Serve uploaded room images statically, e.g. http://localhost:5000/uploads/room-123.jpg
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/", (req, res) => {

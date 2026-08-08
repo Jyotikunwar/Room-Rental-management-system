@@ -12,12 +12,13 @@ export const createRoomSchema = z.object({
   price: z.number().positive("Price must be positive"),
   securityDeposit: z.number().nonnegative().optional(),
   availableFrom: z.string().optional(), // ISO date string from frontend
-  amenityIds: z.array(z.number()).optional(),
+  status: z.enum(["AVAILABLE", "BOOKED", "UNDER_MAINTENANCE"]).optional(),
+  // Frontend (properties.tsx) sends amenity NAMES (e.g. "WiFi", "Parking"),
+  // not numeric ids — the controller resolves/creates Amenity rows by name.
+  amenities: z.array(z.string()).optional(),
 });
 
-export const updateRoomSchema = createRoomSchema.partial().extend({
-  status: z.enum(["AVAILABLE", "BOOKED", "UNDER_MAINTENANCE"]).optional(),
-});
+export const updateRoomSchema = createRoomSchema.partial();
 
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type UpdateRoomInput = z.infer<typeof updateRoomSchema>;
