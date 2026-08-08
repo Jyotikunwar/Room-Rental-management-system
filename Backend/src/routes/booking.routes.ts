@@ -7,6 +7,8 @@ import {
   cancelBooking,
 } from "../controllers/booking.controller";
 import { authenticate, authorize } from "../middleware/auth.middleware";
+import { requireCompleteProfile } from "../middleware/profile.middleware";
+
 
 const router = Router();
 
@@ -27,5 +29,5 @@ router.patch("/:id/status", authorize("LANDLORD", "ADMIN"), updateBookingStatus)
 
 // PATCH /api/bookings/:id/cancel -> Tenant cancels pending booking
 router.patch("/:id/cancel", authorize("TENANT"), cancelBooking);
-
+router.post("/", authenticate, requireCompleteProfile, createBooking);
 export default router;

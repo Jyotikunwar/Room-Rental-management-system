@@ -41,11 +41,11 @@ enum PaymentStatus {
   REFUNDED
 }
 
-enum PaymentMethod {
+enum SavedPaymentMethodType {
   ESEWA
   KHALTI
-  CASH
   BANK
+  CASH
 }
 
 enum ComplaintStatus {
@@ -63,16 +63,28 @@ enum NotificationType {
   SYSTEM
 }
 
-model User {
-  id       Int     @id @default(autoincrement())
-  fullName String
-  email    String  @unique
-  password String
-  phone    String?
-  role     Role    @default(TENANT)
+enum IdentificationType {
+  CITIZENSHIP
+  PASSPORT
+  NATIONAL_ID
+  DRIVING_LICENSE
+}
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model User {
+  id                Int                 @id @default(autoincrement())
+  fullName          String
+  email             String              @unique
+  password          String
+  phone             String?
+  role              Role                @default(TENANT)
+  avatarUrl         String?
+  notificationPrefs Json?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  idType            IdentificationType?
+  idNumber          String?
+  idDocumentUrl     String?
+  isIdVerified      Boolean             @default(false)
 
   rooms      Room[]
   bookings   Booking[]
@@ -85,6 +97,7 @@ model User {
 
   notifications      Notification[]
   recommendationLogs RecommendationLog[]
+  paymentMethods     PaymentMethod[]
 }
 
 model Room {
@@ -201,7 +214,7 @@ model Payment {
 
   amount Int
 
-  paymentMethod PaymentMethod
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
   transactionId String? @unique
 
@@ -209,7 +222,21 @@ model Payment {
 
   paidAt DateTime?
 
-  createdAt DateTime @default(now())
+  createdAt       DateTime @default(now())
+  paymentMethodId Int
+}
+
+model PaymentMethod {
+  id        Int                    @id @default(autoincrement())
+  userId    Int
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      SavedPaymentMethodType
+  label     String
+  detail    String?
+  isDefault Boolean                @default(false)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  payments  Payment[]
 }
 
 model Favorite {

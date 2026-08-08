@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Search, Bell, HelpCircle, Send, ChevronLeft, Loader2, Paperclip, Smile, Phone, MoreVertical,
+  Search, Bell, HelpCircle, Send, ChevronLeft, Loader2, Paperclip, Smile, Phone, MoreVertical, Home,
 } from "lucide-react";
 import type { User, Inquiry } from "../../services/api";
 import { api } from "../../services/api";
@@ -45,7 +45,9 @@ function formatDateDivider(iso: string) {
 // Groups the flat sent+received inquiry list into per-contact, per-room threads.
 // NOTE: the Inquiry API has no read/unread flag or online-presence data, so this
 // view can't show unread badges or "Online" status — that needs an isRead column
-// on the Message model plus a presence/websocket layer, respectively.
+// on the Message model plus a presence/websocket layer, respectively. Adding fake
+// placeholders for these would be misleading, so they're intentionally left out
+// until the backend actually supports them.
 function buildConversations(inquiries: Inquiry[], myId: number): Conversation[] {
   const map = new Map<string, Conversation>();
 
@@ -95,15 +97,27 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const loadMessages = () => {
     setLoading(true);
+    setError(null);
     Promise.all([api.getSentInquiries(), api.getReceivedInquiries()])
       .then(([sentRes, receivedRes]) => {
-        const sent: Inquiry[] = sentRes.success ? sentRes.inquiries || [] : [];
-        const received: Inquiry[] = receivedRes.success ? receivedRes.inquiries || [] : [];
+        const sentFailed = sentRes && sentRes.success === false;
+        const receivedFailed = receivedRes && receivedRes.success === false;
+        const sent: Inquiry[] = sentFailed
+          ? []
+          : Array.isArray(sentRes)
+          ? sentRes
+          : sentRes?.inquiries || sentRes?.data || [];
+        const received: Inquiry[] = receivedFailed
+          ? []
+          : Array.isArray(receivedRes)
+          ? receivedRes
+          : receivedRes?.inquiries || receivedRes?.data || [];
         setInquiries([...sent, ...received]);
-        if (!sentRes.success && !receivedRes.success) {
+        if (sentFailed && receivedFailed) {
           setError(sentRes.message || receivedRes.message || "Failed to load messages");
         }
       })
@@ -138,17 +152,24 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
 
     try {
       const res = await api.replyToInquiry(selected.roomId, selected.contactId, text);
-      if (res.success) {
+      if (res && res.success === false) {
+        setSendError(res.message || "Message failed to send.");
+      } else {
         setDraft("");
         loadMessages();
-      } else {
-        setSendError(res.message || "Message failed to send.");
       }
     } catch {
       setSendError("Message failed to send.");
     } finally {
       setSending(false);
     }
+  };
+
+  const viewRoom = () => {
+    setOptionsOpen(false);
+    // No dedicated single-room route exists yet in TenantView, so this opens
+    // the room-browsing page as the closest available destination.
+    onNavigate(NAV_LABEL_TO_VIEW["Find Rooms"]);
   };
 
   return (
@@ -174,16 +195,18 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
             <button onClick={() => onNavigate("notifications")} className="text-stone-500 hover:text-stone-700">
               <Bell size={18} />
             </button>
-            <button className="text-stone-500 hover:text-stone-700">
+            <button onClick={() => onNavigate("settings")} className="text-stone-500 hover:text-stone-700">
               <HelpCircle size={18} />
             </button>
-            <button onClick={onLogout} className="h-8 w-8 overflow-hidden rounded-full bg-stone-200">
+            {/* Decorative only — clicking your own avatar shouldn't log you out.
+                Use the sidebar's logout control instead. */}
+            <div className="h-8 w-8 overflow-hidden rounded-full bg-stone-200">
               <img
                 src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
                 alt={user.fullName}
                 className="h-full w-full object-cover"
               />
-            </button>
+            </div>
           </div>
         </div>
 
@@ -221,7 +244,10 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
                     return (
                       <button
                         key={c.key}
-                        onClick={() => setSelectedKey(c.key)}
+                        onClick={() => {
+                          setSelectedKey(c.key);
+                          setOptionsOpen(false);
+                        }}
                         className={`flex w-full items-start gap-3 border-l-4 px-4 py-3 text-left hover:bg-stone-50 ${
                           selectedKey === c.key ? "border-blue-600 bg-blue-50/60" : "border-transparent"
                         }`}
@@ -265,7 +291,7 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
               ) : (
                 <>
                   {/* Thread header */}
-                  <div className="flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
+                  <div className="relative flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
                     <button onClick={() => setSelectedKey(null)} className="text-stone-500 hover:text-stone-700 md:hidden">
                       <ChevronLeft size={20} />
                     </button>
@@ -278,12 +304,39 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
                       <p className="truncate text-sm font-semibold text-stone-900">{selected.contactName}</p>
                       <p className="truncate text-xs text-stone-400">{selected.roomTitle}</p>
                     </div>
-                    <button className="shrink-0 text-stone-400 hover:text-stone-600" aria-label="Call (not available)" title="Voice calling isn't wired up yet">
+                    <button
+                      className="shrink-0 text-stone-300"
+                      aria-label="Call (not available)"
+                      title="Voice calling isn't available yet"
+                      disabled
+                    >
                       <Phone size={17} />
                     </button>
-                    <button className="shrink-0 text-stone-400 hover:text-stone-600" aria-label="More options">
+                    <button
+                      onClick={() => setOptionsOpen((v) => !v)}
+                      className="shrink-0 text-stone-400 hover:text-stone-600"
+                      aria-label="More options"
+                    >
                       <MoreVertical size={17} />
                     </button>
+
+                    {optionsOpen && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOptionsOpen(false)} />
+                        <div className="absolute right-4 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-lg">
+                          {selected.roomId ? (
+                            <button
+                              onClick={viewRoom}
+                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-stone-700 hover:bg-stone-50"
+                            >
+                              <Home size={14} /> View Room
+                            </button>
+                          ) : (
+                            <p className="px-3 py-2.5 text-xs text-stone-400">No room linked</p>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Messages */}
@@ -353,9 +406,10 @@ export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPro
 
                     <div className="flex items-center gap-2 rounded-full bg-stone-100 px-2 py-1.5">
                       <button
-                        className="shrink-0 rounded-full p-1.5 text-stone-400 hover:bg-stone-200 hover:text-stone-600"
+                        className="shrink-0 rounded-full p-1.5 text-stone-300"
                         aria-label="Attach file (not available)"
-                        title="File attachments aren't wired up yet"
+                        title="File attachments aren't available yet"
+                        disabled
                       >
                         <Paperclip size={17} />
                       </button>

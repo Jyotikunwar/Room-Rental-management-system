@@ -11,6 +11,7 @@ export const getMyPayments = async (req: AuthRequest, res: Response) => {
         booking: { tenantId },
       },
       include: {
+        paymentMethod: true,
         booking: {
           include: {
             room: {
@@ -36,19 +37,12 @@ export const getMyPayments = async (req: AuthRequest, res: Response) => {
 export const createPayment = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.user!.id;
-    const { bookingId, paymentMethod } = req.body;
+    const { bookingId, paymentMethodId } = req.body;
 
-    if (!bookingId || !paymentMethod) {
+    if (!bookingId || !paymentMethodId) {
       return res.status(400).json({
         success: false,
-        message: "bookingId and paymentMethod are required",
-      });
-    }
-
-    if (!["ESEWA", "KHALTI", "CASH", "BANK"].includes(paymentMethod)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment method",
+        message: "bookingId and paymentMethodId are required",
       });
     }
 
@@ -76,6 +70,15 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: "This booking is already paid" });
     }
 
+    // The chosen payment method must be one the tenant actually owns.
+    const method = await prisma.paymentMethod.findUnique({
+      where: { id: Number(paymentMethodId) },
+    });
+
+    if (!method || method.userId !== tenantId) {
+      return res.status(400).json({ success: false, message: "Invalid payment method" });
+    }
+
     const amount = booking.totalAmount || booking.room.price;
     const transactionId = `TXN-${Date.now()}-${booking.id}`;
 
@@ -84,12 +87,13 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
           where: { id: booking.payment.id },
           data: {
             amount,
-            paymentMethod: paymentMethod as any,
+            paymentMethodId: method.id,
             transactionId,
             status: "PAID",
             paidAt: new Date(),
           },
           include: {
+            paymentMethod: true,
             booking: {
               include: {
                 room: { include: { roomImages: true } },
@@ -101,12 +105,13 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
           data: {
             bookingId: booking.id,
             amount,
-            paymentMethod: paymentMethod as any,
+            paymentMethodId: method.id,
             transactionId,
             status: "PAID",
             paidAt: new Date(),
           },
           include: {
+            paymentMethod: true,
             booking: {
               include: {
                 room: { include: { roomImages: true } },

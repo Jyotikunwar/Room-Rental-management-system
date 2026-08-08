@@ -162,7 +162,18 @@ export interface MaintenanceRequest {
   issueType?: string; // e.g. "Plumbing", "Electrical", "Appliance/Door" — NOTE: not in schema yet
   createdAt: string;
 }
-
+export interface PaymentMethod {
+  id: number;
+  userId: number;
+  type: "ESEWA" | "KHALTI" | "BANK" | "CASH";
+  label: string;
+  detail?: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+ 
+ 
 // NOTE: none of this exists yet — needs a new admin activity feed, either
 // assembled server-side from existing tables (bookings, inquiries,
 // maintenance, room creation) or backed by a dedicated ActivityLog table.
@@ -723,4 +734,122 @@ export const api = {
     });
     return res.json();
   },
+
+  // Tenant — composite endpoints (dashboard/requests/rental/payments)
+  getMyRequests: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/requests`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  cancelRequest: async (bookingId: number) => {
+    const res = await fetch(`${API_BASE_URL}/tenant/requests/${bookingId}/cancel`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getCurrentRental: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/rental`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  reportMaintenanceIssue: async (bookingId: number, title: string, description: string) => {
+    const res = await fetch(`${API_BASE_URL}/tenant/rental/maintenance`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ bookingId, title, description }),
+    });
+    return res.json();
+  },
+  getPaymentsSummary: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/payments/summary`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+getNotificationPreferences: async () => {
+  const res = await fetch(`${API_BASE_URL}/auth/me/notification-preferences`, {
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+},
+
+deleteAccount: async () => {
+  const res = await fetch(`${API_BASE_URL}/auth/me`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+},
+  
+// Add inside the `api = { ... }` object in services/api.ts
+
+  // Saved payment methods
+  getPaymentMethods: async () => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  addPaymentMethod: async (data: { type: "ESEWA" | "KHALTI" | "BANK"; label: string; detail?: string; isDefault?: boolean }) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  updatePaymentMethod: async (id: number, data: { label?: string; detail?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  setDefaultPaymentMethod: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods/${id}/default`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  deletePaymentMethod: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  // ---- Add these two methods inside the `api` object in services/api.ts,
+// near updateProfile/uploadAvatar (same auth-header / multipart patterns). ----
+
+// NOTE: doesn't exist yet — needs a backend route PATCH /auth/me/identification
+// that stores idType + idNumber against the user record (e.g. new columns on
+// User, or a separate Identification table if you also want a review/approval flow).
+updateIdentification: async (data: { idType: string; idNumber: string }) => {
+  const res = await fetch(`${API_BASE_URL}/auth/me/identification`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+},
+
+// NOTE: doesn't exist yet — needs a route accepting multipart/form-data (same
+// shape as uploadAvatar/uploadRoomImages) and storing the file, e.g.
+// POST /auth/me/id-document with the file field named "idDocument".
+uploadIdDocument: async (formData: FormData) => {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}/auth/me/id-document`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  return res.json();
+},
+
 };
