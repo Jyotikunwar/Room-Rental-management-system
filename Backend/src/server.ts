@@ -16,13 +16,14 @@ import adminRoutes from "./routes/admin.routes";
 import publicRoutes from "./routes/public.routes";
 import complaintRoutes from "./routes/Complaint.routes";
 import paymentMethodRoutes from "./routes/paymentMethod.routes";
+import messageRoutes from "./routes/Message.routes";
 // ...
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-
+app.use("/api/messages", messageRoutes);
 // Serve uploaded room images statically, e.g. http://localhost:5000/uploads/room-123.jpg
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 

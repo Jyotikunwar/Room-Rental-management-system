@@ -94,6 +94,7 @@ model User {
 
   sentMessages     Message[] @relation("Sender")
   receivedMessages Message[] @relation("Receiver")
+  lastActiveAt     DateTime?
 
   notifications      Notification[]
   recommendationLogs RecommendationLog[]
