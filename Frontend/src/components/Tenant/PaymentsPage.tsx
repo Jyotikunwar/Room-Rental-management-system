@@ -8,7 +8,7 @@ import type { User, Payment, TenantDashboardData } from "../../services/api";
 import { api } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
-
+import Avatar from "../Avatar";
 interface PaymentsProps {
   user: User;
   onLogout: () => void;
@@ -128,7 +128,7 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
 
   return (
     <div className="flex min-h-screen w-full bg-[#F4F6FB] text-stone-900">
-      <Sidebar active="Payments" onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
+      <Sidebar active="Payments" user={user} onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
@@ -142,11 +142,7 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
               <HelpCircle size={18} />
             </button>
             <button onClick={onLogout} className="h-8 w-8 overflow-hidden rounded-full bg-stone-200">
-              <img
-                src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-                alt={user.fullName}
-                className="h-full w-full object-cover"
-              />
+              <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={32} />
             </button>
           </div>
         </div>

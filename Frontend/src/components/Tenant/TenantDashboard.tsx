@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import {
   Search, Heart, Clock, ClipboardList, MapPin, Sparkles,
   ChevronLeft, ChevronRight, Plus, Eye, CreditCard, Phone,
-  AlertTriangle, UserPlus2, MessageCircle, Loader2,
+  AlertTriangle, UserPlus2, MessageCircle, Loader2, ImageOff, X,
 } from "lucide-react";
-import type { User, DashboardStats, Booking, Favorite, Notification, RecommendationResult } from "../../services/api";
-import { api } from "../../services/api";
+import type { User, DashboardStats, Booking, Favorite, Notification, RecommendationResult, Room } from "../../services/api";
+import { api, UPLOAD_BASE_URL } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
+import Avatar from "../Avatar";
 
 interface TenantDashboardProps {
   user: User;
@@ -42,10 +43,12 @@ interface PlaceSuggestion {
 
 // Free geocoding (OpenStreetMap Nominatim, no API key) so the location field
 // isn't limited to a hardcoded city list — any real place can be searched.
-async function fetchPlaceSuggestions(q: string): Promise<PlaceSuggestion[]> {
+// Takes an AbortSignal so a fast typer doesn't leave old requests racing
+// with newer ones (which was making suggestions feel laggy/out of order).
+async function fetchPlaceSuggestions(q: string, signal: AbortSignal): Promise<PlaceSuggestion[]> {
   if (q.trim().length < 2) return [];
   const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=np&limit=6&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const res = await fetch(url, { headers: { Accept: "application/json" }, signal });
   if (!res.ok) return [];
   return res.json();
 }
@@ -63,8 +66,6 @@ const ROOM_TYPES = [
   { label: "Apartment", value: "APARTMENT" },
 ];
 
-// Passed to FindProperty via sessionStorage since this app doesn't use a router —
-// FindProperty reads "tenantSearchFilters" once on mount to pre-apply these.
 function stashSearchFilters(filters: Record<string, unknown>) {
   sessionStorage.setItem("tenantSearchFilters", JSON.stringify(filters));
 }
@@ -80,11 +81,27 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+// Local, network-free image slot — shows the real room photo when one
+// exists (served from our own backend), otherwise a plain icon on a
+// colored background. No external image service involved.
+function RoomThumb({ imageUrl, className }: { imageUrl?: string; className?: string }) {
+  if (imageUrl) {
+    return <img src={`${UPLOAD_BASE_URL}${imageUrl}`} alt="" className={`object-cover ${className}`} />;
+  }
+  return (
+    <div className={`flex items-center justify-center bg-stone-100 text-stone-300 ${className}`}>
+      <ImageOff size={20} />
+    </div>
+  );
+}
+
 export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDashboardProps) {
   const [data, setData] = useState<TenantDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingRoomId, setSavingRoomId] = useState<number | null>(null);
+  const [bookingRoom, setBookingRoom] = useState<Room | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("");
@@ -93,45 +110,62 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   const [budgetLabel, setBudgetLabel] = useState(BUDGETS[0].label);
   const [roomType, setRoomType] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadDashboard = () => {
     setLoading(true);
     api
       .getTenantDashboard()
       .then((res: TenantDashboardResponse) => {
-        if (cancelled) return;
         if (res.success) setData(res);
         else setError(res.message || "Failed to load dashboard");
       })
-      .catch(() => !cancelled && setError("Failed to load dashboard"))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => setError("Failed to load dashboard"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadDashboard();
   }, []);
 
-  // Debounced live place search as the user types in the location field.
   useEffect(() => {
     if (city.trim().length < 2) {
       setPlaceSuggestions([]);
       return;
     }
+    const controller = new AbortController();
     const timeout = setTimeout(() => {
-      fetchPlaceSuggestions(city)
+      fetchPlaceSuggestions(city, controller.signal)
         .then((results) => setPlaceSuggestions(results))
-        .catch(() => setPlaceSuggestions([]));
+        .catch(() => {}); // aborted requests land here — nothing to do
     }, 400);
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
   }, [city]);
 
   const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
 
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
   const toggleSave = async (roomId: number) => {
     setSavingRoomId(roomId);
+    const alreadySaved = savedRoomIds.has(roomId);
     try {
       await api.toggleFavorite(roomId);
-      const res: TenantDashboardResponse = await api.getTenantDashboard();
-      if (res.success) setData(res);
+      // Update just the saved-rooms list locally instead of re-fetching the
+      // whole dashboard (stats + notifications + recommendations) — this is
+      // the difference between a full reload and an instant heart-toggle.
+      setData((prev) => {
+        if (!prev) return prev;
+        const recentSaved = alreadySaved
+          ? prev.recentSaved.filter((f) => f.roomId !== roomId)
+          : prev.recentSaved;
+        const savedRooms = alreadySaved ? prev.stats.savedRooms - 1 : prev.stats.savedRooms + 1;
+        return { ...prev, recentSaved, stats: { ...prev.stats, savedRooms } };
+      });
     } catch {
       // best-effort — leave existing state if the request fails
     } finally {
@@ -153,6 +187,14 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
 
   const viewMatches = () => {
     stashSearchFilters({ query: data?.stats.preferredLocation ?? "" });
+    onNavigate("search");
+  };
+
+  // No room-detail page hook is wired into this dashboard yet — the closest
+  // real action is taking them to Find Rooms pre-filtered to this room's
+  // title, so they land on something searchable rather than a dead click.
+  const viewRoomDetails = (room: Room) => {
+    stashSearchFilters({ query: room.title });
     onNavigate("search");
   };
 
@@ -203,7 +245,7 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
               className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm sm:flex-nowrap">
             <label className="relative flex items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-stone-600">
               <MapPin size={14} className="shrink-0 text-stone-400" />
               <input
@@ -282,9 +324,12 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
         </div>
 
         {/* ---- Welcome ---- */}
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold">Namaste, {firstName} 👋</h1>
-          <p className="text-sm text-stone-500">Find your next sanctuary in the heart of the city.</p>
+        <div className="mb-6 flex items-center gap-3">
+          <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={44} />
+          <div>
+            <h1 className="text-xl font-semibold">Namaste, {firstName} 👋</h1>
+            <p className="text-sm text-stone-500">Find your next sanctuary in the heart of the city.</p>
+          </div>
         </div>
 
         {/* ---- Recommendation banner ---- */}
@@ -342,11 +387,7 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
               <button onClick={() => onNavigate("rental")} className="text-xs font-medium text-blue-600 hover:underline">Manage Lease</button>
             </div>
             <div className="mb-6 flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-3 sm:gap-4 sm:p-4">
-              <img
-                src={activeRental.room?.roomImages?.[0]?.imageUrl || "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=400&q=80"}
-                alt={activeRental.room?.title}
-                className="h-20 w-20 shrink-0 rounded-xl object-cover sm:h-24 sm:w-28"
-              />
+              <RoomThumb imageUrl={activeRental.room?.roomImages?.[0]?.imageUrl} className="h-20 w-20 shrink-0 rounded-xl sm:h-24 sm:w-28" />
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="truncate text-sm font-semibold">{activeRental.room?.title}</h3>
@@ -409,11 +450,7 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
           <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {recommendations.map(({ room }) => (
               <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-                <img
-                  src={room.roomImages?.[0]?.imageUrl || "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600&q=80"}
-                  alt={room.title}
-                  className="h-32 w-full object-cover"
-                />
+                <RoomThumb imageUrl={room.roomImages?.[0]?.imageUrl} className="h-32 w-full" />
                 <div className="p-3">
                   <h3 className="text-sm font-semibold">{room.title}</h3>
                   <p className="text-xs text-stone-500">{room.location} · {room.roomType}</p>
@@ -428,10 +465,16 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
                     >
                       <Heart size={14} fill={savedRoomIds.has(room.id) ? "currentColor" : "none"} />
                     </button>
-                    <button className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-[0.97]">
+                    <button
+                      onClick={() => viewRoomDetails(room)}
+                      className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-[0.97]"
+                    >
                       View Details
                     </button>
-                    <button className="flex-1 rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97]">
+                    <button
+                      onClick={() => setBookingRoom(room)}
+                      className="flex-1 rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97]"
+                    >
                       Book Now
                     </button>
                   </div>
@@ -484,11 +527,7 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
               )}
               {recentSaved.map((fav, i) => (
                 <div key={fav.id} className={`flex items-center gap-3 ${i !== 0 ? "border-t border-stone-100 pt-3" : ""}`}>
-                  <img
-                    src={fav.room?.roomImages?.[0]?.imageUrl || "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=200&q=80"}
-                    alt={fav.room?.title}
-                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
-                  />
+                  <RoomThumb imageUrl={fav.room?.roomImages?.[0]?.imageUrl} className="h-12 w-12 shrink-0 rounded-lg" />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-stone-800">{fav.room?.title}</p>
                     <p className="text-xs text-blue-600">Rs. {fav.room?.price?.toLocaleString()}/month</p>
@@ -504,6 +543,77 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
           </div>
         </div>
       </main>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-stone-900 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
+          {toast}
+        </div>
+      )}
+
+      {bookingRoom && (
+        <BookNowModal
+          room={bookingRoom}
+          onClose={() => setBookingRoom(null)}
+          onBooked={() => {
+            setBookingRoom(null);
+            showToast("Booking request sent!");
+            loadDashboard();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function BookNowModal({ room, onClose, onBooked }: { room: Room; onClose: () => void; onBooked: () => void }) {
+  const [moveInDate, setMoveInDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (!moveInDate) {
+      setError("Pick a move-in date.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await api.createBooking({ roomId: room.id, moveInDate, notes: notes.trim() || undefined });
+      if (res.success === false) throw new Error(res.message || "Couldn't send booking request.");
+      onBooked();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't send booking request.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5">
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-stone-900">Book "{room.title}"</h3>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+        </div>
+        <p className="mb-4 text-xs text-stone-500">Rs. {room.price.toLocaleString()}/month · {room.location}</p>
+
+        {error && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</div>}
+
+        <label className="mb-3 block text-xs font-medium text-stone-500">
+          Move-in date
+          <input type="date" value={moveInDate} onChange={(e) => setMoveInDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none" />
+        </label>
+
+        <label className="mb-4 block text-xs font-medium text-stone-500">
+          Note to landlord (optional)
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none" />
+        </label>
+
+        <button onClick={handleSubmit} disabled={submitting} className="w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60">
+          {submitting ? "Sending..." : "Send Booking Request"}
+        </button>
+      </div>
     </div>
   );
 }

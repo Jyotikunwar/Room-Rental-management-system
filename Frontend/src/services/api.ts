@@ -45,14 +45,47 @@ export interface Room {
   favorites?: { id: number }[];
   landlord?: { id: number; fullName: string; phone?: string; email?: string };
 }
-
+export interface MessageContact {
+  id: number;
+  fullName: string;
+  role: "TENANT" | "LANDLORD" | "ADMIN";
+  phone?: string;
+  email: string;
+  avatarUrl?: string;
+  isOnline: boolean;
+}
+ 
+export interface ConversationSummary {
+  contact: MessageContact;
+  lastMessage: { text: string; createdAt: string; fromMe: boolean };
+  unreadCount: number;
+}
+ 
+export interface ChatMessage {
+  id: number;
+  text: string;
+  senderId: number;
+  fromMe: boolean;
+  isRead: boolean;
+  createdAt: string;
+}
 export interface RecommendationResult {
   room: Room;
   similarityScore: number;
   popularityScore: number;
   finalScore: number;
 }
-
+export interface User {
+  id: number;
+  fullName: string;
+  email: string;
+  phone?: string;
+  role: "TENANT" | "LANDLORD" | "ADMIN";
+  idType?: "CITIZENSHIP" | "PASSPORT" | "NATIONAL_ID" | "DRIVING_LICENSE";
+  idNumber?: string;
+  idDocumentUrl?: string;
+  isIdVerified?: boolean;
+}
 export interface RecommendationLog {
   id: number;
   tenantId?: number;
@@ -788,10 +821,12 @@ deleteAccount: async () => {
 
   // Saved payment methods
   getPaymentMethods: async () => {
-    const res = await fetch(`${API_BASE_URL}/payment-methods`, { headers: getAuthHeaders() });
+    const res = await fetch(`${API_BASE_URL}/payment-methods`, {
+      headers: getAuthHeaders(),
+    });
     return res.json();
   },
-  addPaymentMethod: async (data: { type: "ESEWA" | "KHALTI" | "BANK"; label: string; detail?: string; isDefault?: boolean }) => {
+  addPaymentMethod: async (data: { type: string; label: string; detail?: string; isDefault?: boolean }) => {
     const res = await fetch(`${API_BASE_URL}/payment-methods`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -821,7 +856,6 @@ deleteAccount: async () => {
     });
     return res.json();
   },
-
   // ---- Add these two methods inside the `api` object in services/api.ts,
 // near updateProfile/uploadAvatar (same auth-header / multipart patterns). ----
 
@@ -851,5 +885,31 @@ uploadIdDocument: async (formData: FormData) => {
   });
   return res.json();
 },
-
+getConversations: async () => {
+    const res = await fetch(`${API_BASE_URL}/messages/conversations`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getMessagesWithContact: async (contactId: number) => {
+    const res = await fetch(`${API_BASE_URL}/messages/${contactId}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  sendMessageTo: async (receiverId: number, message: string, roomId?: number) => {
+    const res = await fetch(`${API_BASE_URL}/messages`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ receiverId, message, roomId }),
+    });
+    return res.json();
+  },
+  markConversationRead: async (contactId: number) => {
+    const res = await fetch(`${API_BASE_URL}/messages/${contactId}/read`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
 };

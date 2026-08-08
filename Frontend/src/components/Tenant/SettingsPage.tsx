@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bell, Settings as SettingsIcon, User as UserIcon, Lock, CreditCard,
-  Trash2, Camera, Check, Plus, ShieldCheck, Upload, AlertTriangle, Loader2, X, Star,
+  Trash2, Camera, Check, Plus, ShieldCheck, Upload, AlertTriangle, Loader2,
+  Landmark, Smartphone, Wallet, X,
 } from "lucide-react";
-import type { User } from "../../services/api";
-import { api, UPLOAD_BASE_URL } from "../../services/api";
+import type { User, PaymentMethod } from "../../services/api";
+import { api } from "../../services/api";
 import type { TenantView } from "./navigation";
 import { Sidebar, type NavLabel } from "./Sidebar";
 
@@ -25,13 +26,19 @@ interface SettingsPageProps {
   onNavigate: (view: TenantView) => void;
 }
 
-interface SavedPaymentMethod {
-  id: number;
-  type: "ESEWA" | "KHALTI" | "BANK";
-  label: string;
-  detail: string | null;
-  isDefault: boolean;
-}
+const METHOD_ICON: Record<PaymentMethod["type"], typeof Landmark> = {
+  ESEWA: Smartphone,
+  KHALTI: Smartphone,
+  BANK: Landmark,
+  CASH: Wallet,
+};
+
+const METHOD_TYPES: { value: PaymentMethod["type"]; label: string }[] = [
+  { value: "ESEWA", label: "eSewa" },
+  { value: "KHALTI", label: "Khalti" },
+  { value: "BANK", label: "Bank Transfer" },
+  { value: "CASH", label: "Cash" },
+];
 
 const ID_TYPES = [
   { value: "CITIZENSHIP", label: "Citizenship Certificate" },
@@ -44,42 +51,98 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   const [fullName, setFullName] = useState(user.fullName ?? "");
   const [email] = useState(user.email ?? "");
   const [phone, setPhone] = useState(user.phone ?? "");
-  const [avatarUrl, setAvatarUrl] = useState((user as any).avatarUrl ?? "");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const [idType, setIdType] = useState((user as any).idType ?? "");
-  const [idNumber, setIdNumber] = useState((user as any).idNumber ?? "");
-  const [idDocumentUrl, setIdDocumentUrl] = useState((user as any).idDocumentUrl ?? "");
-  const [isIdVerified, setIsIdVerified] = useState((user as any).isIdVerified ?? false);
+  const [idType, setIdType] = useState(user.idType ?? "");
+  const [idNumber, setIdNumber] = useState(user.idNumber ?? "");
+  const [idDocumentUrl, setIdDocumentUrl] = useState(user.idDocumentUrl ?? "");
+  const [isIdVerified, setIsIdVerified] = useState(user.isIdVerified ?? false);
   const [idSaving, setIdSaving] = useState(false);
   const [idUploading, setIdUploading] = useState(false);
   const [idMessage, setIdMessage] = useState<{ text: string; ok: boolean } | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  const [methods, setMethods] = useState<SavedPaymentMethod[] | undefined>(undefined);
-  const [methodModalOpen, setMethodModalOpen] = useState(false);
-  const [editingMethod, setEditingMethod] = useState<SavedPaymentMethod | null>(null);
 
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [methodsLoading, setMethodsLoading] = useState(true);
+  const [methodsError, setMethodsError] = useState<string | null>(null);
+  const [methodBusyId, setMethodBusyId] = useState<number | null>(null);
+  const [addMethodOpen, setAddMethodOpen] = useState(false);
+  const [newMethodType, setNewMethodType] = useState<PaymentMethod["type"]>("ESEWA");
+  const [newMethodLabel, setNewMethodLabel] = useState("");
+  const [newMethodDetail, setNewMethodDetail] = useState("");
+  const [addingMethod, setAddingMethod] = useState(false);
+
+  const loadMethods = () => {
+    setMethodsLoading(true);
+    api
+      .getPaymentMethods()
+      .then((res) => {
+        if (res.success === false) throw new Error(res.message || "Couldn't load payment methods.");
+        setMethods(res.methods ?? []);
+      })
+      .catch((err) => setMethodsError(err instanceof Error ? err.message : "Couldn't load payment methods."))
+      .finally(() => setMethodsLoading(false));
+  };
+
   useEffect(() => {
-    loadPaymentMethods();
+    loadMethods();
   }, []);
 
-  const loadPaymentMethods = () => {
-    api.getPaymentMethods().then((res) => {
-      if (res.success !== false) setMethods(res.methods || []);
-    });
+  const handleAddMethod = async () => {
+    if (!newMethodLabel.trim()) return;
+    setAddingMethod(true);
+    try {
+      const res = await api.addPaymentMethod({
+        type: newMethodType,
+        label: newMethodLabel.trim(),
+        detail: newMethodDetail.trim() || undefined,
+      });
+      if (res.success === false) throw new Error(res.message || "Couldn't add payment method.");
+      setMethods((prev) => [...prev.map((m) => ({ ...m, isDefault: res.method.isDefault ? false : m.isDefault })), res.method]);
+      setAddMethodOpen(false);
+      setNewMethodLabel("");
+      setNewMethodDetail("");
+      setNewMethodType("ESEWA");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't add payment method.");
+    } finally {
+      setAddingMethod(false);
+    }
+  };
+
+  const handleSetDefault = async (id: number) => {
+    setMethodBusyId(id);
+    try {
+      const res = await api.setDefaultPaymentMethod(id);
+      if (res.success === false) throw new Error(res.message || "Couldn't set default.");
+      setMethods((prev) => prev.map((m) => ({ ...m, isDefault: m.id === id })));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't set default.");
+    } finally {
+      setMethodBusyId(null);
+    }
+  };
+
+  const handleDeleteMethod = async (id: number) => {
+    setMethodBusyId(id);
+    try {
+      const res = await api.deletePaymentMethod(id);
+      if (res.success === false) throw new Error(res.message || "Couldn't remove payment method.");
+      setMethods((prev) => prev.filter((m) => m.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't remove payment method.");
+    } finally {
+      setMethodBusyId(null);
+    }
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -95,21 +158,6 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       setProfileError(err instanceof Error ? err.message : "Couldn't save changes.");
     } finally {
       setProfileSaving(false);
-    }
-  };
-
-  const handleAvatarSelected = async (file: File) => {
-    setAvatarUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("avatar", file);
-      const res = await api.uploadAvatar(formData);
-      if (res.success === false) throw new Error(res.message || "Couldn't upload photo.");
-      setAvatarUrl(res.user?.avatarUrl ?? "");
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't upload photo.");
-    } finally {
-      setAvatarUploading(false);
     }
   };
 
@@ -143,7 +191,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
     try {
       const res = await api.updateIdentification({ idType, idNumber: idNumber.trim() });
       if (res.success === false) throw new Error(res.message || "Couldn't save your identification.");
-      setIsIdVerified(false);
+      setIsIdVerified(false); // any edit resets verification, matches backend behavior
       setIdMessage({ text: "Identification saved. Pending verification.", ok: true });
     } catch (err) {
       setIdMessage({ text: err instanceof Error ? err.message : "Couldn't save your identification.", ok: false });
@@ -184,17 +232,14 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
 
   const handleNavigate = (label: NavLabel) => onNavigate(LABEL_TO_VIEW[label]);
 
-  const hasIdentification = Boolean(idType && idNumber && idDocumentUrl);
-  const idDocumentFullUrl = idDocumentUrl ? `${UPLOAD_BASE_URL}${idDocumentUrl}` : "";
-  const avatarFullUrl = avatarUrl
-    ? `${UPLOAD_BASE_URL}${avatarUrl}`
-    : `https://api.dicebear.com/7.x/initials/svg?seed=${fullName || "U"}`;
+  const hasIdentification = Boolean(user.idType && user.idNumber && idDocumentUrl);
 
   return (
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
-      <Sidebar active="Settings" onNavigate={handleNavigate} onSettings={() => {}} onLogout={onLogout} />
+      <Sidebar user={user} active="Settings" onNavigate={handleNavigate} onSettings={() => {}} onLogout={onLogout} />
 
       <div className="flex-1">
+        {/* Top bar */}
         <div className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-3 pl-14 sm:px-6 sm:pl-6">
           <h1 className="text-lg font-semibold text-stone-700">RoomRent Manager</h1>
           <div className="flex items-center gap-4">
@@ -205,7 +250,11 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
               <SettingsIcon size={19} />
             </button>
             <button className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200" aria-label="Account">
-              <img src={avatarFullUrl} alt={fullName} className="h-full w-full object-cover" />
+              <img
+                src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
+                alt={user.fullName}
+                className="h-full w-full object-cover"
+              />
             </button>
           </div>
         </div>
@@ -232,26 +281,14 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
 
             <div className="mb-5 flex items-center gap-4">
               <div className="relative">
-                <img src={avatarFullUrl} alt={fullName} className="h-16 w-16 rounded-full bg-stone-200 object-cover" />
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={avatarUploading}
-                  className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-white disabled:opacity-60"
-                  aria-label="Change photo"
-                >
-                  {avatarUploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
-                </button>
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleAvatarSelected(file);
-                  }}
+                <img
+                  src={`https://api.dicebear.com/7.x/initials/svg?seed=${fullName || "U"}`}
+                  alt={fullName}
+                  className="h-16 w-16 rounded-full bg-stone-200 object-cover"
                 />
+                <button className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-white" aria-label="Change photo">
+                  <Camera size={12} />
+                </button>
               </div>
               <div>
                 <p className="text-sm font-medium">{fullName || "Your name"}</p>
@@ -264,22 +301,45 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <form onSubmit={handleSaveProfile} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500">
                 Full Name
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500" />
+                <input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500">
                 Email Address
-                <input type="email" value={email} disabled className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-400 outline-none" />
+                <input
+                  type="email"
+                  value={email}
+                  disabled
+                  className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-400 outline-none"
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500 sm:col-span-2">
                 Phone Number
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98XXXXXXXX" className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="98XXXXXXXX"
+                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                />
               </label>
               <div className="flex items-center gap-3 sm:col-span-2">
-                <button type="submit" disabled={profileSaving} className="flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60">
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
+                >
                   {profileSaving && <Loader2 size={12} className="animate-spin" />}
                   Save Changes
                 </button>
-                {profileSaved && <span className="flex items-center gap-1 text-xs font-medium text-emerald-600"><Check size={13} /> Saved</span>}
+                {profileSaved && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                    <Check size={13} /> Saved
+                  </span>
+                )}
               </div>
             </form>
           </section>
@@ -291,9 +351,11 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
                 <ShieldCheck size={16} className="text-blue-600" />
                 <h3 className="text-sm font-semibold">Identity Verification</h3>
               </div>
-              <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                isIdVerified ? "bg-emerald-50 text-emerald-600" : hasIdentification ? "bg-amber-50 text-amber-600" : "bg-stone-100 text-stone-500"
-              }`}>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  isIdVerified ? "bg-emerald-50 text-emerald-600" : hasIdentification ? "bg-amber-50 text-amber-600" : "bg-stone-100 text-stone-500"
+                }`}
+              >
                 {isIdVerified ? "Verified" : hasIdentification ? "Pending Verification" : "Not Provided"}
               </span>
             </div>
@@ -311,18 +373,33 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500">
                 Document Type
-                <select value={idType} onChange={(e) => setIdType(e.target.value)} className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500">
+                <select
+                  value={idType}
+                  onChange={(e) => setIdType(e.target.value)}
+                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                >
                   <option value="">Select document type</option>
-                  {ID_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  {ID_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500">
                 Document Number
-                <input value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder="e.g. 12-34-56-78901" className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500" />
+                <input
+                  value={idNumber}
+                  onChange={(e) => setIdNumber(e.target.value)}
+                  placeholder="e.g. 12-34-56-78901"
+                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                />
               </label>
             </div>
 
-            <button onClick={handleSaveIdentification} disabled={idSaving} className="mt-3 flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60">
+            <button
+              onClick={handleSaveIdentification}
+              disabled={idSaving}
+              className="mt-3 flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
+            >
               {idSaving && <Loader2 size={12} className="animate-spin" />}
               Save Identification
             </button>
@@ -333,9 +410,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
                 <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-500">Required</span>
               </p>
               {idDocumentUrl ? (
-                <button type="button" onClick={() => setPreviewOpen(true)} className="mb-2 block">
-                  <img src={idDocumentFullUrl} alt="Uploaded ID — click to view full size" className="h-32 w-auto cursor-zoom-in rounded-lg border border-stone-200 object-cover transition hover:opacity-80" />
-                </button>
+                <img src={idDocumentUrl} alt="Uploaded ID" className="mb-2 h-32 w-auto rounded-lg border border-stone-200 object-cover" />
               ) : (
                 <p className="mb-2 text-xs text-stone-400">No document uploaded yet — this is required before you can book a room.</p>
               )}
@@ -372,14 +447,28 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500">
                 Current Password
-                <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500">
                 New Password
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
               </label>
             </div>
-            <button onClick={handleChangePassword} disabled={passwordSaving} className="mt-4 flex items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-60">
+            <button
+              onClick={handleChangePassword}
+              disabled={passwordSaving}
+              className="mt-4 flex items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-60"
+            >
               {passwordSaving && <Loader2 size={12} className="animate-spin" />}
               Update Password
             </button>
@@ -392,38 +481,117 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
               <h3 className="text-sm font-semibold">Payment Methods</h3>
             </div>
 
-            {methods === undefined ? (
-              <p className="py-3 text-center text-xs text-stone-400">Loading...</p>
-            ) : methods.length === 0 ? (
-              <p className="mb-3 text-xs text-stone-400">No saved payment methods yet.</p>
+            {methodsLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 size={16} className="animate-spin text-stone-400" />
+              </div>
+            ) : methodsError ? (
+              <p className="py-3 text-xs text-rose-600">{methodsError}</p>
             ) : (
-              <div className="flex flex-col divide-y divide-stone-100">
-                {methods.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between py-2.5">
-                    <div className="flex items-center gap-2">
-                      {m.isDefault && <Star size={12} className="shrink-0 fill-amber-400 text-amber-400" />}
-                      <div>
-                        <p className="text-sm font-medium text-stone-800">{m.label}</p>
-                        <p className="text-xs text-stone-500">{m.detail || (m.isDefault ? "Default" : "Saved")}</p>
-                      </div>
+              <>
+                {methods.length === 0 ? (
+                  <p className="py-3 text-xs text-stone-400">No payment methods added yet.</p>
+                ) : (
+                  <div className="flex flex-col divide-y divide-stone-100">
+                    {methods.map((m) => {
+                      const Icon = METHOD_ICON[m.type];
+                      return (
+                        <div key={m.id} className="flex items-center justify-between gap-3 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                              <Icon size={14} />
+                            </span>
+                            <div>
+                              <p className="flex items-center gap-1.5 text-sm font-medium text-stone-800">
+                                {m.label}
+                                {m.isDefault && (
+                                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
+                                    Default
+                                  </span>
+                                )}
+                              </p>
+                              {m.detail && <p className="text-xs text-stone-500">{m.detail}</p>}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            {methodBusyId === m.id ? (
+                              <Loader2 size={13} className="animate-spin text-stone-400" />
+                            ) : (
+                              <>
+                                {!m.isDefault && (
+                                  <button
+                                    onClick={() => handleSetDefault(m.id)}
+                                    className="text-xs font-medium text-blue-600 hover:underline"
+                                  >
+                                    Set Default
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteMethod(m.id)}
+                                  className="text-stone-400 hover:text-rose-500"
+                                  aria-label="Remove payment method"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!addMethodOpen ? (
+                  <button
+                    onClick={() => setAddMethodOpen(true)}
+                    className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
+                  >
+                    <Plus size={13} /> Add another payment method
+                  </button>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50/60 p-3.5">
+                    <div className="mb-2.5 flex items-center justify-between">
+                      <p className="text-xs font-semibold text-stone-700">New Payment Method</p>
+                      <button onClick={() => setAddMethodOpen(false)} className="text-stone-400 hover:text-stone-600">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      <select
+                        value={newMethodType}
+                        onChange={(e) => setNewMethodType(e.target.value as PaymentMethod["type"])}
+                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none"
+                      >
+                        {METHOD_TYPES.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        value={newMethodLabel}
+                        onChange={(e) => setNewMethodLabel(e.target.value)}
+                        placeholder="Label (e.g. My eSewa)"
+                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none"
+                      />
+                      <input
+                        value={newMethodDetail}
+                        onChange={(e) => setNewMethodDetail(e.target.value)}
+                        placeholder="Detail (e.g. 98XXXXXX21) — optional"
+                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none sm:col-span-2"
+                      />
                     </div>
                     <button
-                      onClick={() => { setEditingMethod(m); setMethodModalOpen(true); }}
-                      className="text-xs font-medium text-blue-600 hover:underline"
+                      onClick={handleAddMethod}
+                      disabled={addingMethod || !newMethodLabel.trim()}
+                      className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-stone-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
                     >
-                      Manage
+                      {addingMethod && <Loader2 size={12} className="animate-spin" />}
+                      Add Method
                     </button>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
-
-            <button
-              onClick={() => { setEditingMethod(null); setMethodModalOpen(true); }}
-              className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
-            >
-              <Plus size={13} /> Add another payment method
-            </button>
           </section>
 
           {/* ---- Danger zone ---- */}
@@ -438,12 +606,19 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
                 <p className="text-xs text-stone-500">This permanently removes your account and booking history.</p>
               </div>
               {!deleteConfirming ? (
-                <button onClick={() => setDeleteConfirming(true)} className="shrink-0 rounded-lg border border-rose-300 px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50">
+                <button
+                  onClick={() => setDeleteConfirming(true)}
+                  className="shrink-0 rounded-lg border border-rose-300 px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                >
                   Delete Account
                 </button>
               ) : (
                 <div className="flex shrink-0 items-center gap-2">
-                  <button onClick={handleDeleteAccount} disabled={deleting} className="rounded-lg bg-rose-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-60">
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={deleting}
+                    className="rounded-lg bg-rose-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-60"
+                  >
                     {deleting ? "Deleting..." : "Confirm Delete"}
                   </button>
                   <button onClick={() => setDeleteConfirming(false)} className="text-xs font-medium text-stone-500 hover:underline">
@@ -459,136 +634,6 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             </div>
           </section>
         </div>
-      </div>
-
-      {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPreviewOpen(false)}>
-          <img src={idDocumentFullUrl} alt="ID document full size" className="max-h-[85vh] max-w-full rounded-lg object-contain" />
-          <button onClick={() => setPreviewOpen(false)} className="absolute right-5 top-5 text-white hover:text-stone-300"><X size={24} /></button>
-        </div>
-      )}
-
-      {methodModalOpen && (
-        <PaymentMethodModal
-          method={editingMethod}
-          onClose={() => setMethodModalOpen(false)}
-          onSaved={() => { setMethodModalOpen(false); loadPaymentMethods(); }}
-        />
-      )}
-    </div>
-  );
-}
-
-function PaymentMethodModal({
-  method,
-  onClose,
-  onSaved,
-}: {
-  method: SavedPaymentMethod | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [type, setType] = useState<SavedPaymentMethod["type"]>(method?.type ?? "ESEWA");
-  const [label, setLabel] = useState(method?.label ?? "");
-  const [detail, setDetail] = useState(method?.detail ?? "");
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isEditing = Boolean(method);
-
-  async function handleSave() {
-    if (!label.trim()) {
-      setError("Give this method a label (e.g. \"eSewa\").");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const res = isEditing
-        ? await api.updatePaymentMethod(method!.id, { label: label.trim(), detail: detail.trim() || undefined })
-        : await api.addPaymentMethod({ type, label: label.trim(), detail: detail.trim() || undefined });
-      if (res.success === false) throw new Error(res.message || "Couldn't save this payment method.");
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save this payment method.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleSetDefault() {
-    if (!method) return;
-    setSaving(true);
-    try {
-      await api.setDefaultPaymentMethod(method.id);
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (!method) return;
-    if (!confirm("Remove this payment method?")) return;
-    setDeleting(true);
-    try {
-      await api.deletePaymentMethod(method.id);
-      onSaved();
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-stone-900">{isEditing ? "Manage Payment Method" : "Add Payment Method"}</h3>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
-        </div>
-
-        {error && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</div>}
-
-        {!isEditing && (
-          <label className="mb-3 block text-xs font-medium text-stone-500">
-            Type
-            <select value={type} onChange={(e) => setType(e.target.value as SavedPaymentMethod["type"])} className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none">
-              <option value="ESEWA">eSewa</option>
-              <option value="KHALTI">Khalti</option>
-              <option value="BANK">Bank Account</option>
-            </select>
-          </label>
-        )}
-
-        <label className="mb-3 block text-xs font-medium text-stone-500">
-          Label
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. eSewa" className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none" />
-        </label>
-
-        <label className="mb-4 block text-xs font-medium text-stone-500">
-          Detail (optional — masked number is fine)
-          <input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="e.g. 98XXXXXX21" className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none" />
-        </label>
-
-        <button onClick={handleSave} disabled={saving} className="w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60">
-          {saving ? "Saving..." : isEditing ? "Save Changes" : "Add Method"}
-        </button>
-
-        {isEditing && (
-          <div className="mt-3 flex items-center justify-between border-t border-stone-100 pt-3">
-            {!method!.isDefault ? (
-              <button onClick={handleSetDefault} disabled={saving} className="text-xs font-medium text-blue-600 hover:underline">
-                Set as default
-              </button>
-            ) : (
-              <span className="text-xs font-medium text-stone-400">Default method</span>
-            )}
-            <button onClick={handleDelete} disabled={deleting} className="text-xs font-medium text-rose-600 hover:underline">
-              {deleting ? "Removing..." : "Remove"}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

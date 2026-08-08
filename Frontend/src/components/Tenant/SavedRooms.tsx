@@ -7,7 +7,7 @@ import type { User, Room } from "../../services/api";
 import { api } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
-
+import Avatar from "../Avatar";
 interface SavedRoomsProps {
   user: User;
   onLogout: () => void;
@@ -234,6 +234,7 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
   return (
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
       <Sidebar
+        user={user}
         active="Saved Rooms"
         onNavigate={handleNavigate}
         onSettings={() => onNavigate("settings")}
@@ -261,11 +262,7 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
               <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500" />
             </button>
             <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
-              <img
-                src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-                alt={user.fullName}
-                className="h-full w-full object-cover"
-              />
+             <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={32} />
             </div>
           </div>
         </div>

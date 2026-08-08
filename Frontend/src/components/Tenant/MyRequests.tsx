@@ -6,7 +6,7 @@ import type { User, Booking, Room } from "../../services/api";
 import { api, UPLOAD_BASE_URL } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
-
+import Avatar from "../Avatar";
 // ---------- Types ----------
 // The UI groups bookings into these 4 buckets. The backend's BookingStatus
 // has 5 values (PENDING/APPROVED/REJECTED/CANCELLED/COMPLETED) — COMPLETED
@@ -112,7 +112,7 @@ export default function MyRequests({ user, onLogout, onNavigate }: MyRequestsPro
 
   return (
     <div className="flex min-h-screen w-full bg-[#EEF1F8] text-stone-900">
-      <Sidebar active="My Requests" onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
+      <Sidebar active="My Requests" user={user} onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
@@ -120,7 +120,7 @@ export default function MyRequests({ user, onLogout, onNavigate }: MyRequestsPro
           <button className="text-stone-500 hover:text-stone-700"><Search size={18} /></button>
           <button onClick={() => onNavigate("notifications")} className="relative text-stone-500 hover:text-stone-700"><Bell size={18} /></button>
           <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
-            <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`} alt={user.fullName} className="h-full w-full object-cover" />
+            <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={32} />
           </div>
         </div>
 

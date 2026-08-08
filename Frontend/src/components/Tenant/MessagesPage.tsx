@@ -1,26 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Bell, HelpCircle, Send, ChevronLeft, Loader2, Paperclip, Smile, Phone, MoreVertical, Home,
+  Search, Bell, Plus, Phone, User as UserIcon, MoreVertical,
+  Paperclip, Smile, Send, Building2, Wrench, Wallet, Loader2, ChevronLeft,
 } from "lucide-react";
-import type { User, Inquiry } from "../../services/api";
+import type { User, ConversationSummary, ChatMessage } from "../../services/api";
 import { api } from "../../services/api";
+import type { TenantView } from "./navigation";
 import { Sidebar, type NavLabel } from "./Sidebar";
-import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 
-interface MessagesProps {
+const LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
+  "Dashboard": "dashboard",
+  "Find Rooms": "search",
+  "Saved Rooms": "saved",
+  "My Requests": "requests",
+  "Current Rental": "rental",
+  "Payments": "payments",
+  "Messages": "messages",
+  "Notifications": "notifications",
+};
+
+interface MessagesPageProps {
   user: User;
   onLogout: () => void;
   onNavigate: (view: TenantView) => void;
-}
-
-interface Conversation {
-  key: string; // `${contactId}-${roomId ?? "none"}`
-  contactId: number;
-  contactName: string;
-  contactRole?: string;
-  roomId: number | null;
-  roomTitle: string;
-  messages: Inquiry[]; // sorted oldest -> newest
 }
 
 function formatTime(iso: string) {
@@ -31,421 +33,352 @@ function formatListTimestamp(iso: string) {
   const date = new Date(iso);
   const today = new Date();
   const isToday = date.toDateString() === today.toDateString();
-  return isToday ? formatTime(iso) : date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (isToday) return formatTime(iso);
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
-function formatDateDivider(iso: string) {
+function formatDayLabel(iso: string) {
   const date = new Date(iso);
   const today = new Date();
-  const isToday = date.toDateString() === today.toDateString();
-  const label = date.toLocaleDateString("en-US", { month: "long", day: "numeric" });
-  return isToday ? `Today, ${label}` : label;
+  if (date.toDateString() === today.toDateString()) return "Today";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// Groups the flat sent+received inquiry list into per-contact, per-room threads.
-// NOTE: the Inquiry API has no read/unread flag or online-presence data, so this
-// view can't show unread badges or "Online" status — that needs an isRead column
-// on the Message model plus a presence/websocket layer, respectively. Adding fake
-// placeholders for these would be misleading, so they're intentionally left out
-// until the backend actually supports them.
-function buildConversations(inquiries: Inquiry[], myId: number): Conversation[] {
-  const map = new Map<string, Conversation>();
-
-  for (const inq of inquiries) {
-    const isMine = inq.senderId === myId;
-    const contact = isMine ? inq.receiver : inq.sender;
-    const contactId = isMine ? inq.receiverId : inq.senderId;
-    const roomId = inq.roomId ?? null;
-    const key = `${contactId}-${roomId ?? "none"}`;
-
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        contactId,
-        contactName: contact?.fullName || "Unknown",
-        contactRole: contact?.role,
-        roomId,
-        roomTitle: inq.room?.title || "General inquiry",
-        messages: [],
-      });
-    }
-    map.get(key)!.messages.push(inq);
-  }
-
-  const conversations = Array.from(map.values());
-  for (const c of conversations) {
-    c.messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }
-  conversations.sort((a, b) => {
-    const aLast = a.messages[a.messages.length - 1]?.createdAt || "";
-    const bLast = b.messages[b.messages.length - 1]?.createdAt || "";
-    return bLast.localeCompare(aLast);
-  });
-  return conversations;
-}
-
-const ROLE_LABEL: Record<string, string> = { LANDLORD: "Landlord", TENANT: "Tenant", ADMIN: "Admin" };
-const EMOJIS = ["😀", "😂", "😍", "👍", "🙏", "🎉", "😢", "😮", "❤️", "🔥", "👏", "🤔", "😅", "🙌", "✅", "🎊"];
-
-export default function MessagesPage({ user, onLogout, onNavigate }: MessagesProps) {
-  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+export default function MessagesPage({ user, onLogout, onNavigate }: MessagesPageProps) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [convLoading, setConvLoading] = useState(true);
+  const [convError, setConvError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"ALL" | "UNREAD">("ALL");
+
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [thread, setThread] = useState<{
+    contact: ConversationSummary["contact"];
+    messages: ChatMessage[];
+    property: { title: string; leaseEndDate: string | null; roomId: number } | null;
+  } | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
 
-  const loadMessages = () => {
-    setLoading(true);
-    setError(null);
-    Promise.all([api.getSentInquiries(), api.getReceivedInquiries()])
-      .then(([sentRes, receivedRes]) => {
-        const sentFailed = sentRes && sentRes.success === false;
-        const receivedFailed = receivedRes && receivedRes.success === false;
-        const sent: Inquiry[] = sentFailed
-          ? []
-          : Array.isArray(sentRes)
-          ? sentRes
-          : sentRes?.inquiries || sentRes?.data || [];
-        const received: Inquiry[] = receivedFailed
-          ? []
-          : Array.isArray(receivedRes)
-          ? receivedRes
-          : receivedRes?.inquiries || receivedRes?.data || [];
-        setInquiries([...sent, ...received]);
-        if (sentFailed && receivedFailed) {
-          setError(sentRes.message || receivedRes.message || "Failed to load messages");
-        }
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const loadConversations = () => {
+    setConvLoading(true);
+    api
+      .getConversations()
+      .then((res) => {
+        if (res.success === false) throw new Error(res.message || "Couldn't load messages.");
+        setConversations(res.conversations ?? []);
       })
-      .catch(() => setError("Failed to load messages"))
-      .finally(() => setLoading(false));
+      .catch((err) => setConvError(err instanceof Error ? err.message : "Couldn't load messages."))
+      .finally(() => setConvLoading(false));
   };
 
   useEffect(() => {
-    loadMessages();
+    loadConversations();
   }, []);
 
-  const conversations = useMemo(() => buildConversations(inquiries, user.id), [inquiries, user.id]);
+  const openConversation = (contactId: number) => {
+    setSelectedId(contactId);
+    setThreadLoading(true);
+    api
+      .getMessagesWithContact(contactId)
+      .then((res) => {
+        if (res.success === false) throw new Error(res.message || "Couldn't load this conversation.");
+        setThread({ contact: res.contact, messages: res.messages ?? [], property: res.property });
+        // reflect read state in the list without a full refetch
+        setConversations((prev) => prev.map((c) => (c.contact.id === contactId ? { ...c, unreadCount: 0 } : c)));
+      })
+      .catch(() => setThread(null))
+      .finally(() => setThreadLoading(false));
+  };
 
-  const filteredConversations = useMemo(() => {
-    return conversations.filter(
-      (c) =>
-        query.trim() === "" ||
-        c.contactName.toLowerCase().includes(query.toLowerCase()) ||
-        c.roomTitle.toLowerCase().includes(query.toLowerCase())
-    );
-  }, [conversations, query]);
-
-  const selected = conversations.find((c) => c.key === selectedKey) ?? null;
-
-  const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [thread?.messages.length]);
 
   const sendMessage = async () => {
-    if (!draft.trim() || !selected || !selected.roomId) return;
-    setSending(true);
-    setSendError(null);
+    if (!draft.trim() || !thread) return;
     const text = draft.trim();
-
+    setDraft("");
+    setSending(true);
     try {
-      const res = await api.replyToInquiry(selected.roomId, selected.contactId, text);
-      if (res && res.success === false) {
-        setSendError(res.message || "Message failed to send.");
-      } else {
-        setDraft("");
-        loadMessages();
-      }
+      const res = await api.sendMessageTo(thread.contact.id, text, thread.property?.roomId);
+      if (res.success === false) throw new Error(res.message);
+      setThread((prev) => (prev ? { ...prev, messages: [...prev.messages, res.data] } : prev));
+      setConversations((prev) => {
+        const next = prev.filter((c) => c.contact.id !== thread.contact.id);
+        return [
+          { contact: thread.contact, lastMessage: { text, createdAt: res.data.createdAt, fromMe: true }, unreadCount: 0 },
+          ...next,
+        ];
+      });
     } catch {
-      setSendError("Message failed to send.");
+      setDraft(text); // restore on failure
     } finally {
       setSending(false);
     }
   };
 
-  const viewRoom = () => {
-    setOptionsOpen(false);
-    // No dedicated single-room route exists yet in TenantView, so this opens
-    // the room-browsing page as the closest available destination.
-    onNavigate(NAV_LABEL_TO_VIEW["Find Rooms"]);
-  };
+  const filteredConversations = useMemo(() => {
+    return conversations.filter((c) => {
+      const matchesQuery = query.trim() === "" || c.contact.fullName.toLowerCase().includes(query.toLowerCase());
+      const matchesFilter = filter === "ALL" || c.unreadCount > 0;
+      return matchesQuery && matchesFilter;
+    });
+  }, [conversations, query, filter]);
+
+  const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+  const handleNavigate = (label: NavLabel) => onNavigate(LABEL_TO_VIEW[label]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F4F6FB] text-stone-900">
-      <Sidebar active="Messages" onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
+    <div className="flex h-screen w-full overflow-hidden bg-stone-50 text-stone-900">
+      <Sidebar user={user} active="Messages" onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <div className="flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3.5 pl-14 sm:px-6 sm:pl-6">
-          <h1 className="shrink-0 text-lg font-bold">Messages</h1>
-          <div className="hidden flex-1 items-center justify-center sm:flex">
-            <div className="flex w-full max-w-sm items-center gap-2 rounded-full bg-stone-100 px-3.5 py-2">
-              <Search size={14} className="shrink-0 text-stone-400" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search..."
-                className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-stone-400"
-              />
-            </div>
+        <div className="flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3 pl-14 sm:px-6 sm:pl-6">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-stone-100 px-3 py-2">
+            <Search size={15} className="shrink-0 text-stone-400" />
+            <input
+              placeholder="Search properties, landlords..."
+              className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-stone-400"
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-4">
-            <button onClick={() => onNavigate("notifications")} className="text-stone-500 hover:text-stone-700">
-              <Bell size={18} />
-            </button>
-            <button onClick={() => onNavigate("settings")} className="text-stone-500 hover:text-stone-700">
-              <HelpCircle size={18} />
-            </button>
-            {/* Decorative only — clicking your own avatar shouldn't log you out.
-                Use the sidebar's logout control instead. */}
-            <div className="h-8 w-8 overflow-hidden rounded-full bg-stone-200">
-              <img
-                src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-                alt={user.fullName}
-                className="h-full w-full object-cover"
-              />
-            </div>
-          </div>
+          <button onClick={() => onNavigate("notifications")} className="relative shrink-0 text-stone-500 hover:text-stone-700">
+            <Bell size={18} />
+            {totalUnread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500" />}
+          </button>
+          <button className="hidden shrink-0 items-center gap-1.5 rounded-lg bg-stone-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-stone-800 sm:flex">
+            <Plus size={14} /> New Message
+          </button>
         </div>
 
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Loader2 className="animate-spin text-stone-400" size={26} />
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1">
-            {/* Conversation list */}
-            <aside
-              className={`w-full shrink-0 flex-col border-r border-stone-200 bg-white md:flex md:w-80 ${
-                selected ? "hidden md:flex" : "flex"
-              }`}
-            >
-              <div className="shrink-0 border-b border-stone-100 p-3">
-                <div className="flex items-center gap-2 rounded-lg bg-stone-100 px-3 py-2">
-                  <Search size={15} className="shrink-0 text-stone-400" />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search messages"
-                    className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-stone-400"
-                  />
-                </div>
+        {/* Body */}
+        <div className="flex min-h-0 flex-1">
+          {/* Conversation list */}
+          <aside className={`w-full shrink-0 flex-col border-r border-stone-200 bg-white md:flex md:w-80 ${selectedId ? "hidden md:flex" : "flex"}`}>
+            <div className="shrink-0 border-b border-stone-100 p-3">
+              <h2 className="mb-2 px-1 text-sm font-semibold text-stone-900">Messages</h2>
+              <div className="mb-2 flex items-center gap-2 rounded-xl bg-stone-100 px-3 py-2">
+                <Search size={14} className="shrink-0 text-stone-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search contacts..."
+                  className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-stone-400"
+                />
               </div>
-
-              <div className="flex-1 overflow-y-auto">
-                {error && <p className="p-4 text-center text-xs text-stone-400">{error}</p>}
-
-                {!error &&
-                  filteredConversations.map((c) => {
-                    const last = c.messages[c.messages.length - 1];
-                    const lastIsMine = last?.senderId === user.id;
-                    return (
-                      <button
-                        key={c.key}
-                        onClick={() => {
-                          setSelectedKey(c.key);
-                          setOptionsOpen(false);
-                        }}
-                        className={`flex w-full items-start gap-3 border-l-4 px-4 py-3 text-left hover:bg-stone-50 ${
-                          selectedKey === c.key ? "border-blue-600 bg-blue-50/60" : "border-transparent"
-                        }`}
-                      >
-                        <img
-                          src={`https://api.dicebear.com/7.x/initials/svg?seed=${c.contactName}`}
-                          alt={c.contactName}
-                          className="h-11 w-11 shrink-0 rounded-full object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-sm font-medium text-stone-900">{c.contactName}</p>
-                            <span className="shrink-0 text-[11px] text-stone-400">
-                              {last ? formatListTimestamp(last.createdAt) : ""}
-                            </span>
-                          </div>
-                          {c.contactRole && (
-                            <p className="text-[11px] font-medium text-blue-600">{ROLE_LABEL[c.contactRole] ?? c.contactRole}</p>
-                          )}
-                          <p className="mt-0.5 truncate text-xs text-stone-500">
-                            {lastIsMine ? "You: " : ""}
-                            {last?.message}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                {!error && filteredConversations.length === 0 && (
-                  <p className="p-4 text-center text-xs text-stone-400">No conversations found.</p>
-                )}
+              <div className="flex gap-1.5">
+                {(["ALL", "UNREAD"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                      filter === f ? "bg-blue-600 text-white" : "border border-stone-200 text-stone-600 hover:bg-stone-50"
+                    }`}
+                  >
+                    {f === "ALL" ? "All" : "Unread"}
+                  </button>
+                ))}
               </div>
-            </aside>
+            </div>
 
-            {/* Chat thread */}
-            <section className={`min-w-0 flex-1 flex-col md:flex ${selected ? "flex" : "hidden"}`}>
-              {!selected ? (
-                <div className="hidden h-full flex-1 items-center justify-center md:flex">
-                  <p className="text-sm text-stone-400">Select a conversation to start messaging.</p>
-                </div>
+            <div className="flex-1 overflow-y-auto">
+              {convLoading ? (
+                <div className="flex items-center justify-center py-10"><Loader2 size={18} className="animate-spin text-stone-400" /></div>
+              ) : convError ? (
+                <p className="p-4 text-center text-xs text-rose-500">{convError}</p>
               ) : (
                 <>
-                  {/* Thread header */}
-                  <div className="relative flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
-                    <button onClick={() => setSelectedKey(null)} className="text-stone-500 hover:text-stone-700 md:hidden">
-                      <ChevronLeft size={20} />
+                  {filteredConversations.map((c) => (
+                    <button
+                      key={c.contact.id}
+                      onClick={() => openConversation(c.contact.id)}
+                      className={`flex w-full items-start gap-3 border-b border-stone-50 px-4 py-3 text-left hover:bg-stone-50 ${
+                        selectedId === c.contact.id ? "bg-blue-50/60" : ""
+                      }`}
+                    >
+                      <div className="relative shrink-0">
+                        <img
+                          src={c.contact.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${c.contact.fullName}`}
+                          alt={c.contact.fullName}
+                          className="h-11 w-11 rounded-full object-cover"
+                        />
+                        {c.contact.isOnline && (
+                          <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-sm font-medium text-stone-900">{c.contact.fullName}</p>
+                          <span className="shrink-0 text-[11px] text-stone-400">{formatListTimestamp(c.lastMessage.createdAt)}</span>
+                        </div>
+                        <p className={`mt-0.5 truncate text-xs ${c.unreadCount > 0 ? "font-medium text-stone-800" : "text-stone-500"}`}>
+                          {c.lastMessage.fromMe ? "You: " : ""}
+                          {c.lastMessage.text}
+                        </p>
+                      </div>
+                      {c.unreadCount > 0 && (
+                        <span className="mt-1 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 px-1 text-[11px] font-semibold text-white">
+                          {c.unreadCount}
+                        </span>
+                      )}
                     </button>
-                    <img
-                      src={`https://api.dicebear.com/7.x/initials/svg?seed=${selected.contactName}`}
-                      alt={selected.contactName}
-                      className="h-9 w-9 rounded-full object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-stone-900">{selected.contactName}</p>
-                      <p className="truncate text-xs text-stone-400">{selected.roomTitle}</p>
+                  ))}
+                  {filteredConversations.length === 0 && (
+                    <p className="p-4 text-center text-xs text-stone-400">No conversations found.</p>
+                  )}
+                </>
+              )}
+            </div>
+          </aside>
+
+          {/* Chat thread */}
+          <section className={`min-w-0 flex-1 flex-col md:flex ${selectedId ? "flex" : "hidden"}`}>
+            {!selectedId ? (
+              <div className="hidden h-full flex-1 items-center justify-center md:flex">
+                <p className="text-sm text-stone-400">Select a conversation to start messaging.</p>
+              </div>
+            ) : threadLoading || !thread ? (
+              <div className="flex h-full flex-1 items-center justify-center"><Loader2 size={18} className="animate-spin text-stone-400" /></div>
+            ) : (
+              <>
+                {/* Thread header */}
+                <div className="flex shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
+                  <button onClick={() => setSelectedId(null)} className="text-stone-500 hover:text-stone-700 md:hidden">
+                    <ChevronLeft size={20} />
+                  </button>
+                  <img
+                    src={thread.contact.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${thread.contact.fullName}`}
+                    alt={thread.contact.fullName}
+                    className="h-9 w-9 rounded-full object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-stone-900">
+                      {thread.contact.fullName} <span className="font-normal text-stone-400">· {thread.contact.role === "LANDLORD" ? "Landlord" : "Tenant"}</span>
+                    </p>
+                    <p className={`text-xs ${thread.contact.isOnline ? "text-emerald-600" : "text-stone-400"}`}>
+                      {thread.contact.isOnline ? "Online" : "Offline"}
+                    </p>
+                  </div>
+                  {thread.contact.phone && (
+                    <a href={`tel:${thread.contact.phone}`} className="rounded-lg border border-stone-200 p-2 text-stone-500 hover:bg-stone-50">
+                      <Phone size={15} />
+                    </a>
+                  )}
+                  <button className="rounded-lg border border-stone-200 p-2 text-stone-500 hover:bg-stone-50">
+                    <UserIcon size={15} />
+                  </button>
+                  <button className="text-stone-400 hover:text-stone-600">
+                    <MoreVertical size={16} />
+                  </button>
+                </div>
+
+                {/* Messages */}
+                <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-stone-50 px-4 py-4">
+                  {thread.messages.length > 0 && (
+                    <div className="mb-2 text-center">
+                      <span className="rounded-full bg-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-500">
+                        {formatDayLabel(thread.messages[0].createdAt)}
+                      </span>
                     </div>
-                    <button
-                      className="shrink-0 text-stone-300"
-                      aria-label="Call (not available)"
-                      title="Voice calling isn't available yet"
-                      disabled
-                    >
-                      <Phone size={17} />
+                  )}
+                  {thread.messages.map((m) => (
+                    <div key={m.id} className={`flex ${m.fromMe ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${m.fromMe ? "rounded-br-sm bg-stone-900 text-white" : "rounded-bl-sm bg-white text-stone-800 shadow-sm"}`}>
+                        <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                        <div className={`mt-1 text-right text-[10px] ${m.fromMe ? "text-white/60" : "text-stone-400"}`}>{formatTime(m.createdAt)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Composer */}
+                <div className="shrink-0 border-t border-stone-200 bg-white p-3">
+                  <div className="flex items-end gap-2">
+                    <button className="shrink-0 rounded-lg p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-600">
+                      <Paperclip size={18} />
                     </button>
-                    <button
-                      onClick={() => setOptionsOpen((v) => !v)}
-                      className="shrink-0 text-stone-400 hover:text-stone-600"
-                      aria-label="More options"
-                    >
-                      <MoreVertical size={17} />
-                    </button>
-
-                    {optionsOpen && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setOptionsOpen(false)} />
-                        <div className="absolute right-4 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-lg">
-                          {selected.roomId ? (
-                            <button
-                              onClick={viewRoom}
-                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-stone-700 hover:bg-stone-50"
-                            >
-                              <Home size={14} /> View Room
-                            </button>
-                          ) : (
-                            <p className="px-3 py-2.5 text-xs text-stone-400">No room linked</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Messages */}
-                  <div className="flex-1 space-y-1 overflow-y-auto bg-[#F7F9FC] px-4 py-4">
-                    {selected.messages.map((m, i) => {
-                      const mine = m.senderId === user.id;
-                      const prev = selected.messages[i - 1];
-                      const showDateDivider = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
-                      return (
-                        <div key={m.id}>
-                          {showDateDivider && (
-                            <div className="my-3 flex justify-center">
-                              <span className="rounded-full bg-stone-200/70 px-3 py-1 text-[11px] font-medium text-stone-500">
-                                {formatDateDivider(m.createdAt)}
-                              </span>
-                            </div>
-                          )}
-                          <div className={`flex items-end gap-2 py-1 ${mine ? "justify-end" : "justify-start"}`}>
-                            {!mine && (
-                              <img
-                                src={`https://api.dicebear.com/7.x/initials/svg?seed=${selected.contactName}`}
-                                alt=""
-                                className="h-6 w-6 shrink-0 rounded-full object-cover"
-                              />
-                            )}
-                            <div className="flex max-w-[75%] flex-col">
-                              <div
-                                className={`rounded-2xl px-3.5 py-2 text-sm ${
-                                  mine ? "rounded-br-sm bg-blue-600 text-white" : "rounded-bl-sm bg-white text-stone-800 shadow-sm"
-                                }`}
-                              >
-                                <p className="whitespace-pre-wrap break-words">{m.message}</p>
-                              </div>
-                              <span className={`mt-0.5 text-[10px] text-stone-400 ${mine ? "text-right" : "text-left"}`}>
-                                {formatTime(m.createdAt)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Composer */}
-                  <div className="relative shrink-0 border-t border-stone-200 bg-white p-3">
-                    {sendError && <p className="mb-2 text-xs font-medium text-rose-600">{sendError}</p>}
-
-                    {emojiOpen && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setEmojiOpen(false)} />
-                        <div className="absolute bottom-full right-3 z-20 mb-2 grid grid-cols-8 gap-1 rounded-xl border border-stone-200 bg-white p-2 shadow-lg">
-                          {EMOJIS.map((e) => (
-                            <button
-                              key={e}
-                              onClick={() => {
-                                setDraft((d) => d + e);
-                                setEmojiOpen(false);
-                              }}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-lg hover:bg-stone-100"
-                            >
-                              {e}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    <div className="flex items-center gap-2 rounded-full bg-stone-100 px-2 py-1.5">
-                      <button
-                        className="shrink-0 rounded-full p-1.5 text-stone-300"
-                        aria-label="Attach file (not available)"
-                        title="File attachments aren't available yet"
-                        disabled
-                      >
-                        <Paperclip size={17} />
-                      </button>
-                      <input
+                    <div className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 px-3 py-2">
+                      <textarea
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") {
+                          if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
                             sendMessage();
                           }
                         }}
                         placeholder="Type a message..."
-                        className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-stone-400"
+                        rows={1}
+                        className="max-h-28 min-h-[22px] flex-1 resize-none bg-transparent text-sm outline-none"
                       />
-                      <button
-                        onClick={() => setEmojiOpen((v) => !v)}
-                        className={`shrink-0 rounded-full p-1.5 hover:bg-stone-200 ${emojiOpen ? "bg-stone-200 text-stone-700" : "text-stone-400 hover:text-stone-600"}`}
-                        aria-label="Emoji picker"
-                      >
-                        <Smile size={17} />
-                      </button>
-                      <button
-                        onClick={sendMessage}
-                        disabled={!draft.trim() || sending}
-                        className="flex shrink-0 items-center justify-center rounded-full bg-blue-600 p-2 text-white hover:bg-blue-500 disabled:opacity-40"
-                      >
-                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                      </button>
+                      <Smile size={17} className="shrink-0 text-stone-400" />
+                    </div>
+                    <button
+                      onClick={sendMessage}
+                      disabled={!draft.trim() || sending}
+                      className="flex shrink-0 items-center justify-center rounded-xl bg-blue-600 p-2.5 text-white hover:bg-blue-500 disabled:opacity-40"
+                    >
+                      <Send size={16} />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
+
+          {/* Contact profile panel */}
+          {thread && !threadLoading && (
+            <aside className="hidden w-72 shrink-0 flex-col overflow-y-auto border-l border-stone-200 bg-white p-5 lg:flex">
+              <div className="flex flex-col items-center text-center">
+                <img
+                  src={thread.contact.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${thread.contact.fullName}`}
+                  alt={thread.contact.fullName}
+                  className="h-16 w-16 rounded-full object-cover"
+                />
+                <p className="mt-3 text-sm font-semibold text-stone-900">{thread.contact.fullName}</p>
+                <span className="mt-1 rounded-full bg-stone-100 px-2.5 py-0.5 text-[11px] font-medium text-stone-500">
+                  {thread.contact.role === "LANDLORD" ? "Landlord" : "Tenant"}
+                </span>
+
+                <div className="mt-4 flex w-full flex-col gap-2 text-left text-xs text-stone-500">
+                  {thread.contact.phone && (
+                    <span className="flex items-center gap-2">
+                      <Phone size={12} /> {thread.contact.phone}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-2 truncate">
+                    <UserIcon size={12} /> {thread.contact.email}
+                  </span>
+                </div>
+              </div>
+
+              {thread.property && (
+                <div className="mt-6">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Property Details</p>
+                  <div className="flex items-start gap-2.5 rounded-xl bg-blue-50/60 p-3">
+                    <Building2 size={16} className="mt-0.5 shrink-0 text-blue-600" />
+                    <div>
+                      <p className="text-xs font-semibold text-stone-800">{thread.property.title}</p>
+                      {thread.property.leaseEndDate && (
+                        <p className="text-[11px] text-stone-500">
+                          Lease ends: {new Date(thread.property.leaseEndDate).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
+                        </p>
+                      )}
                     </div>
                   </div>
-                </>
+                </div>
               )}
-            </section>
-          </div>
-        )}
+            </aside>
+          )}
+        </div>
       </div>
     </div>
   );

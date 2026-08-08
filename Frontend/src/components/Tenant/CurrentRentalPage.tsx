@@ -8,7 +8,7 @@ import type { User, Booking, Payment } from "../../services/api";
 import { api, UPLOAD_BASE_URL } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
-
+import Avatar from "../Avatar";
 interface CurrentRentalProps {
   user: User;
   onLogout: () => void;
@@ -61,7 +61,7 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
 
   return (
     <div className="flex min-h-screen w-full bg-[#EEF1F8] text-stone-900">
-      <Sidebar active="Current Rental" onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
+      <Sidebar active="Current Rental" user={user} onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
@@ -69,7 +69,7 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
           <button className="text-stone-500 hover:text-stone-700"><Search size={18} /></button>
           <button onClick={() => onNavigate("notifications")} className="relative text-stone-500 hover:text-stone-700"><Bell size={18} /></button>
           <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
-            <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`} alt={user.fullName} className="h-full w-full object-cover" />
+            <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={32} />
           </div>
         </div>
 
@@ -164,13 +164,15 @@ function LeaseDetailsCard({ rental }: { rental: Booking }) {
   const now = Date.now();
   const progressPct = Math.min(100, Math.max(0, Math.round(((now - start) / (endMs - start)) * 100)));
 
+  const securityDeposit = (rental.room as any)?.securityDeposit;
+
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
       <h2 className="mb-4 text-sm font-semibold text-stone-900">Lease Details</h2>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Field label="Monthly Rent" value={`Rs. ${rental.room?.price.toLocaleString()}`} />
-        <Field label="Deposit" value={rental.room?.securityDeposit != null ? `Rs. ${rental.room.securityDeposit.toLocaleString()}` : "—"} />
+        <Field label="Deposit" value={securityDeposit != null ? `Rs. ${securityDeposit.toLocaleString()}` : "—"} />
         <Field label="Move-in Date" value={formatDate(rental.moveInDate)} />
         <Field label="Lease Ends" value={rental.endDate ? formatDate(rental.endDate) : "Not set"} />
       </div>
@@ -199,7 +201,7 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 function MaintenanceCard({ rental, onNewRequest }: { rental: Booking; onNewRequest: () => void }) {
-  const complaints = rental.complaints ?? [];
+  const complaints = (rental as any).complaints ?? [];
   const statusStyle: Record<string, string> = {
     PENDING: "bg-amber-50 text-amber-600",
     IN_PROGRESS: "bg-blue-50 text-blue-600",

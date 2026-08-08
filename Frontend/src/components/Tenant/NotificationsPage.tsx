@@ -7,7 +7,7 @@ import type { User, Notification } from "../../services/api";
 import { api } from "../../services/api";
 import type { TenantView } from "./navigation";
 import { Sidebar, type NavLabel } from "./Sidebar";
-
+import Avatar from "../Avatar";
 interface NotificationsPageProps {
   user: User;
   onLogout: () => void;
@@ -157,6 +157,19 @@ export default function NotificationsPage({ user, onLogout, onNavigate }: Notifi
     }
   };
 
+  // Handle click: mark notification read (if needed) then navigate based on type
+  const handleNotificationClick = async (n: Notification) => {
+    try {
+      if (!n.isRead) await markOneAsRead(n);
+    } finally {
+      // Basic routing by notification type. Extend to use ids/links from notification payload if available.
+      if (n.type === "BOOKING") onNavigate("requests");
+      else if (n.type === "PAYMENT") onNavigate("payments");
+      else if (n.type === "MESSAGE") onNavigate("messages");
+      else onNavigate("dashboard");
+    }
+  };
+
   const openPrefs = () => {
     setPrefsOpen(true);
     if (!prefsLoading) {
@@ -214,6 +227,7 @@ export default function NotificationsPage({ user, onLogout, onNavigate }: Notifi
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
       <Sidebar
         active="Notifications"
+        user={user}
         onNavigate={handleNavigate}
         onSettings={() => onNavigate("settings")}
         onLogout={onLogout}
@@ -234,11 +248,7 @@ export default function NotificationsPage({ user, onLogout, onNavigate }: Notifi
             </span>
             {/* Decorative only — avatar shouldn't trigger logout. Use the sidebar's logout control. */}
             <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
-              <img
-                src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-                alt={user.fullName}
-                className="h-full w-full object-cover"
-              />
+             <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={32} />
             </div>
           </div>
         </div>
@@ -301,7 +311,7 @@ export default function NotificationsPage({ user, onLogout, onNavigate }: Notifi
                 return (
                   <button
                     key={n.id}
-                    onClick={() => markOneAsRead(n)}
+                    onClick={() => handleNotificationClick(n)}
                     className={`flex items-start gap-3 rounded-xl border bg-white p-4 text-left shadow-sm transition-colors hover:bg-stone-50 ${
                       !n.isRead ? "border-l-4 border-blue-500 border-y-stone-200 border-r-stone-200" : "border-stone-200"
                     }`}
@@ -410,7 +420,7 @@ export default function NotificationsPage({ user, onLogout, onNavigate }: Notifi
                             className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
                               prefs[t.key] ? "translate-x-4" : "translate-x-0.5"
                             }`}
-                          />
+                        />
                         </button>
                       </div>
                     </div>

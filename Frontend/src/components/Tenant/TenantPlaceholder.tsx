@@ -32,6 +32,7 @@ export function TenantPlaceholder({
   return (
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
       <Sidebar
+        user={user}
         active={active}
         onNavigate={handleNavigate}
         onSettings={() => onNavigate("settings")}

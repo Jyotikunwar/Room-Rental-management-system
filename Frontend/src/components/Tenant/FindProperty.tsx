@@ -8,7 +8,7 @@ import type { User, Room } from "../../services/api";
 import { api } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
-
+import Avatar from "../Avatar";
 interface FindPropertyProps {
   user: User;
   onLogout: () => void;
@@ -100,11 +100,14 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     Promise.all([api.getRooms({ status: "AVAILABLE" }), api.getFavorites()])
       .then(([roomsRes, favRes]) => {
         if (cancelled) return;
-        if (roomsRes.success) setRooms(roomsRes.rooms || []);
-        else setError(roomsRes.message || "Failed to load rooms");
-        if (favRes.success) {
-          setSavedIds(new Set((favRes.favorites || []).map((f: { roomId: number }) => f.roomId)));
+        if (roomsRes && roomsRes.success === false) {
+          setError(roomsRes.message || "Failed to load rooms");
+        } else {
+          const roomList = Array.isArray(roomsRes) ? roomsRes : roomsRes?.rooms || roomsRes?.data || [];
+          setRooms(roomList);
         }
+        const favList = Array.isArray(favRes) ? favRes : favRes?.favorites || favRes?.data || [];
+        setSavedIds(new Set(favList.map((f: { roomId: number }) => f.roomId)));
       })
       .catch(() => !cancelled && setError("Failed to load rooms"))
       .finally(() => !cancelled && setLoading(false));
@@ -145,7 +148,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     });
     try {
       const res = await api.toggleFavorite(roomId);
-      if (!res.success) {
+      if (res && res.success === false) {
         // revert on failure
         setSavedIds((prev) => {
           const next = new Set(prev);
@@ -205,10 +208,10 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
         moveInDate,
         notes: bookingNotes || undefined,
       });
-      if (res.success) {
-        setBookingSuccess(true);
-      } else {
+      if (res && res.success === false) {
         setBookingError(res.message || "Failed to create booking");
+      } else {
+        setBookingSuccess(true);
       }
     } catch (e) {
       setBookingError("Failed to create booking. Please try again.");
@@ -262,6 +265,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   return (
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
       <Sidebar
+        user={user}
         active="Find Rooms"
         onNavigate={handleNavigate}
         onSettings={() => onNavigate("settings")}
@@ -286,11 +290,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500" />
           </button>
           <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
-            <img
-              src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-              alt={user.fullName}
-              className="h-full w-full object-cover"
-            />
+            <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={32} />
           </div>
         </div>
 
