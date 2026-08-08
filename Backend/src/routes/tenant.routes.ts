@@ -1,12 +1,12 @@
-import { Router } from "express";
-import { getTenantDashboard, getPersonalizedRecommendations } from "../controllers/tenant.controller";
+﻿import { Router } from "express";
+import { getTenantDashboard, getCurrentRental } from "../controllers/dashboard.controller";
+import { createComplaint } from "../controllers/complaint.controller";
 import { authenticate, authorize } from "../middleware/auth.middleware";
 
 const router = Router();
 
-router.use(authenticate, authorize("TENANT"));
-
-router.get("/dashboard", getTenantDashboard);
-router.get("/recommendations", getPersonalizedRecommendations);
+router.get("/dashboard", authenticate, authorize("TENANT"), getTenantDashboard);
+router.get("/rental", authenticate, authorize("TENANT"), getCurrentRental);
+router.post("/rental/maintenance", authenticate, authorize("TENANT"), createComplaint);
 
 export default router;

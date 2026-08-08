@@ -2,7 +2,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -84,7 +83,8 @@ model User {
   sentMessages     Message[] @relation("Sender")
   receivedMessages Message[] @relation("Receiver")
 
-  notifications Notification[]
+  notifications      Notification[]
+  recommendationLogs RecommendationLog[]
 }
 
 model Room {
@@ -119,10 +119,11 @@ model Room {
   roomImages    RoomImage[]
   roomAmenities RoomAmenity[]
 
-  bookings  Booking[]
-  favorites Favorite[]
-  reviews   Review[]
-  messages  Message[]
+  bookings           Booking[]
+  favorites          Favorite[]
+  reviews            Review[]
+  messages           Message[]
+  recommendationLogs RecommendationLog[]
 
   @@index([city])
   @@index([price])
@@ -274,9 +275,9 @@ model Message {
   roomId Int?
   room   Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
-  message String
-
-  isRead Boolean @default(false)
+  message       String
+  attachmentUrl String?
+  isRead        Boolean @default(false)
 
   createdAt DateTime @default(now())
 }
@@ -296,4 +297,20 @@ model Notification {
   isRead Boolean @default(false)
 
   createdAt DateTime @default(now())
+}
+
+model RecommendationLog {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int?
+  roomId          Int
+  similarityScore Float
+  popularityScore Float
+  finalScore      Float
+  createdAt       DateTime @default(now())
+
+  tenant User? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  room   Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([roomId])
 }
