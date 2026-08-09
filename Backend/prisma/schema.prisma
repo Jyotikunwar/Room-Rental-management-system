@@ -202,7 +202,8 @@ model Booking {
 
   payment Payment?
 
-  complaints Complaint[]
+  complaints   Complaint[]
+  rentInvoices RentInvoice[]
 
   @@index([status])
 }
@@ -228,16 +229,17 @@ model Payment {
 }
 
 model PaymentMethod {
-  id        Int                    @id @default(autoincrement())
-  userId    Int
-  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      SavedPaymentMethodType
-  label     String
-  detail    String?
-  isDefault Boolean                @default(false)
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
-  payments  Payment[]
+  id           Int                    @id @default(autoincrement())
+  userId       Int
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         SavedPaymentMethodType
+  label        String
+  detail       String?
+  isDefault    Boolean                @default(false)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  payments     Payment[]
+  rentInvoices RentInvoice[]
 }
 
 model Favorite {
@@ -353,4 +355,33 @@ model Faq {
   updatedAt DateTime @updatedAt
 
   @@index([order])
+}
+
+model RentInvoice {
+  id Int @id @default(autoincrement())
+
+  bookingId Int
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  amount Int
+
+  dueDate DateTime
+
+  status PaymentStatus @default(PENDING)
+
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  transactionId String?        @unique
+
+  paidAt DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  paymentMethodId Int?
+
+  @@index([status])
+  @@index([bookingId])
+  @@index([dueDate])
 }
