@@ -27,6 +27,17 @@ export interface RoomImage {
   imageUrl: string;
   isPrimary?: boolean;
 }
+ 
+export interface Faq {
+  id: number;
+  question: string;
+  answer: string;
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+ 
 
 export interface Room {
   id: number;
@@ -912,4 +923,38 @@ getConversations: async () => {
     });
     return res.json();
   },
+  getFaqs: async () => {
+  const res = await fetch(`${API_BASE_URL}/faqs`);
+  return res.json();
+},
+ 
+// Admin-only — for a future FAQ management screen
+getAllFaqsAdmin: async () => {
+  const res = await fetch(`${API_BASE_URL}/faqs/admin/all`, { headers: getAuthHeaders() });
+  return res.json();
+},
+createFaq: async (data: { question: string; answer: string; order?: number }) => {
+  const res = await fetch(`${API_BASE_URL}/faqs`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+},
+updateFaq: async (id: number, data: { question?: string; answer?: string; order?: number; isActive?: boolean }) => {
+  const res = await fetch(`${API_BASE_URL}/faqs/${id}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+},
+deleteFaq: async (id: number) => {
+  const res = await fetch(`${API_BASE_URL}/faqs/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+},
+ 
 };
