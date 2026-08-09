@@ -260,11 +260,10 @@ export const getMyRooms = async (req: AuthRequest, res: Response) => {
       where: { landlordId: req.user!.id },
       include: {
         roomImages: true,
-        // NOTE: this was missing before — without it, room.roomAmenities was
-        // always undefined and the "Edit Existing Property" form could never
-        // prefill the amenity checkboxes.
         roomAmenities: { include: { amenity: true } },
         bookings: true,
+        // ← added: reviews.tsx reads room.reviews from this exact response
+        reviews: { include: { user: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } },
       },
       orderBy: { createdAt: "desc" },
     });

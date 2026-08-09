@@ -55,6 +55,12 @@ enum ComplaintStatus {
   REJECTED
 }
 
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum NotificationType {
   BOOKING
   PAYMENT
@@ -70,6 +76,8 @@ model User {
   password String
   phone    String?
   role     Role    @default(TENANT)
+
+  avatarUrl String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -188,6 +196,8 @@ model Booking {
 
   payment Payment?
 
+  rentInvoices RentInvoice[]
+
   complaints Complaint[]
 
   @@index([status])
@@ -210,6 +220,34 @@ model Payment {
   paidAt DateTime?
 
   createdAt DateTime @default(now())
+}
+
+model RentInvoice {
+  id Int @id @default(autoincrement())
+
+  bookingId Int
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  amount Int
+
+  dueDate DateTime
+
+  status PaymentStatus @default(PENDING)
+
+  paymentMethod PaymentMethod?
+  transactionId String?        @unique
+
+  paidAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([bookingId])
+  @@index([dueDate])
 }
 
 model Favorite {
@@ -254,6 +292,8 @@ model Complaint {
   title String
 
   description String
+
+  priority ComplaintPriority @default(MEDIUM)
 
   status ComplaintStatus @default(PENDING)
 
@@ -309,7 +349,8 @@ model RecommendationLog {
   createdAt       DateTime @default(now())
 
   tenant User? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  room   Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([roomId])

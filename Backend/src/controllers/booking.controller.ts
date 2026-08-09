@@ -1,6 +1,7 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { generateInvoicesForBooking } from "../services/rentInvoice.service";
 
 // POST /api/bookings -> Tenant submits a booking request
 export const createBooking = async (req: AuthRequest, res: Response) => {
@@ -37,7 +38,6 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check for existing active booking for this tenant and room
     const existingBooking = await prisma.booking.findFirst({
       where: {
         tenantId,
@@ -178,7 +178,6 @@ export const updateBookingStatus = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Update booking status
     const updatedBooking = await prisma.booking.update({
       where: { id: Number(id) },
       data: { status: status as any },
@@ -188,14 +187,14 @@ export const updateBookingStatus = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // If booking is APPROVED, mark room status as BOOKED
     if (status === "APPROVED") {
       await prisma.room.update({
         where: { id: booking.roomId },
         data: { status: "BOOKED" },
       });
+      // Generate the recurring rent schedule now that the lease is confirmed.
+      await generateInvoicesForBooking(booking.id);
     } else if (status === "CANCELLED" || status === "REJECTED") {
-      // If room was booked under this booking, set back to AVAILABLE
       if (booking.room.status === "BOOKED" && booking.status === "APPROVED") {
         await prisma.room.update({
           where: { id: booking.roomId },
