@@ -9,11 +9,20 @@ import {
   MoreVertical,
   MessageSquare,
   Pencil,
+  X,
+  Loader2,
+  Building2,
 } from "lucide-react";
 import { api, type User } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
 
-// NOTE: mirrors the interfaces added to api.ts — see comment above this file.
+interface LandlordRoom {
+  id: number;
+  title: string;
+  status: string;
+  price: number;
+}
+
 interface LandlordProfile {
   id: number;
   fullName: string;
@@ -23,6 +32,7 @@ interface LandlordProfile {
   propertyCount: number;
   tenantCount: number;
   lastActiveAt?: string;
+  rooms?: LandlordRoom[];
 }
 
 interface LandlordDirectoryStats {
@@ -85,6 +95,13 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
   const [sortBy, setSortBy] = useState<"NAME" | "PROPERTIES" | "TENANTS" | "RECENT">("NAME");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const [detailsLandlord, setDetailsLandlord] = useState<LandlordProfile | null>(null);
+  const [editLandlord, setEditLandlord] = useState<LandlordProfile | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -94,11 +111,9 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
     setLoading(true);
     setLoadFailed(false);
     try {
-      // NOTE: (api as any) because getLandlords/getLandlordStats aren't in
-      // api.ts yet — see the snippet above this component.
       const [landlordsRes, statsRes] = await Promise.all([
-        (api as any).getLandlords?.(),
-        (api as any).getLandlordStats?.(),
+        api.getLandlords(),
+        api.getLandlordStats(),
       ]);
       if (landlordsRes?.success) {
         setLandlords(landlordsRes.landlords || []);
@@ -116,27 +131,66 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
     }
   }
 
+  const handleToggleStatus = async (landlord: LandlordProfile) => {
+    setOpenMenuId(null);
+    setBusyId(landlord.id);
+    const suspending = landlord.status !== "INACTIVE";
+    try {
+      const res = await api.toggleLandlordStatus(landlord.id, !suspending);
+      if (res.success === false) throw new Error(res.message);
+      setLandlords((prev) =>
+        prev.map((l) => (l.id === landlord.id ? { ...l, status: suspending ? "INACTIVE" : (l.propertyCount === 0 ? "PENDING" : "ACTIVE") } : l))
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't update landlord status.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openEdit = (landlord: LandlordProfile) => {
+    setEditLandlord(landlord);
+    setEditName(landlord.fullName);
+    setEditPhone(landlord.phone ?? "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editLandlord) return;
+    setEditSaving(true);
+    try {
+      const res = await api.updateLandlordProfile(editLandlord.id, { fullName: editName, phone: editPhone });
+      if (res.success === false) throw new Error(res.message);
+      setLandlords((prev) => prev.map((l) => (l.id === editLandlord.id ? { ...l, fullName: editName, phone: editPhone } : l)));
+      setEditLandlord(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't update landlord.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const filteredLandlords = useMemo(() => {
+    const q = headerSearch.trim().toLowerCase();
     let result = landlords.filter((l) => {
+      const matchesSearch = q === "" || l.fullName.toLowerCase().includes(q) || l.email.toLowerCase().includes(q);
       const matchesStatus = statusFilter === "ALL" || l.status === statusFilter;
       const matchesPortfolio =
         portfolioFilter === "ALL" ||
         (portfolioFilter === "SMALL" && l.propertyCount <= 3) ||
         (portfolioFilter === "MEDIUM" && l.propertyCount > 3 && l.propertyCount <= 10) ||
         (portfolioFilter === "LARGE" && l.propertyCount > 10);
-      return matchesStatus && matchesPortfolio;
+      return matchesSearch && matchesStatus && matchesPortfolio;
     });
 
     result = [...result].sort((a, b) => {
       if (sortBy === "NAME") return a.fullName.localeCompare(b.fullName);
       if (sortBy === "PROPERTIES") return b.propertyCount - a.propertyCount;
       if (sortBy === "TENANTS") return b.tenantCount - a.tenantCount;
-      // RECENT
       return new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime();
     });
 
     return result;
-  }, [landlords, statusFilter, portfolioFilter, sortBy]);
+  }, [landlords, headerSearch, statusFilter, portfolioFilter, sortBy]);
 
   const visibleLandlords = filteredLandlords.slice(0, visibleCount);
   const hasMore = visibleCount < filteredLandlords.length;
@@ -159,7 +213,7 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
               type="text"
               value={headerSearch}
               onChange={(e) => setHeaderSearch(e.target.value)}
-              placeholder="Search properties, tenants..."
+              placeholder="Search landlords by name or email..."
               className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
             />
           </div>
@@ -185,8 +239,7 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
 
           {loadFailed && !loading && (
             <div className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              Couldn't load landlord data — this backend endpoint likely doesn't exist yet
-              (see the comment at the top of <code>adminLandlords.tsx</code> for what to add).
+              Couldn't load landlord data. Please try again shortly.
             </div>
           )}
 
@@ -235,6 +288,11 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
                 { value: "RECENT", label: "Recently Active" },
               ]}
             />
+            {headerSearch && (
+              <span className="text-xs text-gray-400">
+                {filteredLandlords.length} result{filteredLandlords.length === 1 ? "" : "s"} for "{headerSearch}"
+              </span>
+            )}
           </div>
 
           {/* Landlord cards */}
@@ -251,15 +309,24 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
                     className="absolute right-4 top-4 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                     aria-label="More options"
                   >
-                    <MoreVertical size={16} />
+                    {busyId === l.id ? <Loader2 size={16} className="animate-spin" /> : <MoreVertical size={16} />}
                   </button>
                   {openMenuId === l.id && (
-                    <div className="absolute right-4 top-10 z-10 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                      <button className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
+                    <div className="absolute right-4 top-10 z-10 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          setDetailsLandlord(l);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                      >
                         View Portfolio
                       </button>
-                      <button className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
-                        Suspend Account
+                      <button
+                        onClick={() => handleToggleStatus(l)}
+                        className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                      >
+                        {l.status === "INACTIVE" ? "Reactivate Account" : "Suspend Account"}
                       </button>
                     </div>
                   )}
@@ -303,13 +370,24 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] text-gray-400">Last active {timeAgo(l.lastActiveAt)}</p>
                     <div className="flex gap-2">
-                      <button className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50" aria-label="Message landlord">
+                      <button
+                        onClick={() => onNavigate("messages")}
+                        className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50"
+                        aria-label="Message landlord"
+                      >
                         <MessageSquare size={13} />
                       </button>
-                      <button className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50" aria-label="Edit landlord">
+                      <button
+                        onClick={() => openEdit(l)}
+                        className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50"
+                        aria-label="Edit landlord"
+                      >
                         <Pencil size={13} />
                       </button>
-                      <button className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      <button
+                        onClick={() => setDetailsLandlord(l)}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
                         Details
                       </button>
                     </div>
@@ -331,6 +409,79 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
           )}
         </main>
       </div>
+
+      {/* ---- Details / Portfolio modal ---- */}
+      {detailsLandlord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">{detailsLandlord.fullName}'s Portfolio</h3>
+              <button onClick={() => setDetailsLandlord(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            {!detailsLandlord.rooms || detailsLandlord.rooms.length === 0 ? (
+              <p className="py-6 text-center text-xs text-gray-400">No properties listed yet.</p>
+            ) : (
+              <div className="flex flex-col divide-y divide-gray-100">
+                {detailsLandlord.rooms.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
+                        <Building2 size={14} />
+                      </span>
+                      <p className="text-sm font-medium text-gray-800">{r.title}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-semibold text-gray-700">Rs. {r.price.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400">{r.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ---- Edit modal ---- */}
+      {editLandlord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Edit Landlord</h3>
+              <button onClick={() => setEditLandlord(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            <label className="mb-3 block text-xs font-medium text-gray-500">
+              Full Name
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none"
+              />
+            </label>
+            <label className="mb-4 block text-xs font-medium text-gray-500">
+              Phone
+              <input
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none"
+              />
+            </label>
+            <button
+              onClick={handleSaveEdit}
+              disabled={editSaving}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gray-900 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
+            >
+              {editSaving && <Loader2 size={13} className="animate-spin" />}
+              Save Changes
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

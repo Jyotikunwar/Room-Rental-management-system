@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Bell, Settings as SettingsIcon, User as UserIcon, Lock, CreditCard,
+  Bell, User as UserIcon, Lock, CreditCard,
   Trash2, Camera, Check, Plus, ShieldCheck, Upload, AlertTriangle, Loader2,
   Landmark, Smartphone, Wallet, X,
 } from "lucide-react";
@@ -40,12 +40,48 @@ const METHOD_TYPES: { value: PaymentMethod["type"]; label: string }[] = [
   { value: "CASH", label: "Cash" },
 ];
 
-const ID_TYPES = [
-  { value: "CITIZENSHIP", label: "Citizenship Certificate" },
-  { value: "PASSPORT", label: "Passport" },
-  { value: "NATIONAL_ID", label: "National ID" },
-  { value: "DRIVING_LICENSE", label: "Driving License" },
+type IdType = "CITIZENSHIP" | "PASSPORT" | "NATIONAL_ID" | "DRIVING_LICENSE";
+
+// Format-only validation (not a real government lookup) — each pattern is a
+// reasonable shape check for the document type, not proof the number exists.
+const ID_TYPES: { value: IdType; label: string; placeholder: string; pattern: RegExp; hint: string }[] = [
+  {
+    value: "CITIZENSHIP",
+    label: "Citizenship Certificate",
+    placeholder: "e.g. 12-34-56-78901",
+    pattern: /^\d{2,3}-\d{2}-\d{2}-\d{4,5}$/,
+    hint: "Format: XX-XX-XX-XXXXX (digits and dashes only)",
+  },
+  {
+    value: "PASSPORT",
+    label: "Passport",
+    placeholder: "e.g. PA1234567",
+    pattern: /^[A-Za-z]{1,2}\d{6,8}$/,
+    hint: "1–2 letters followed by 6–8 digits",
+  },
+  {
+    value: "NATIONAL_ID",
+    label: "National ID",
+    placeholder: "e.g. 123456789012",
+    pattern: /^\d{9,12}$/,
+    hint: "9–12 digits, numbers only",
+  },
+  {
+    value: "DRIVING_LICENSE",
+    label: "Driving License",
+    placeholder: "e.g. 12-345-678901",
+    pattern: /^[A-Za-z0-9-]{6,15}$/,
+    hint: "6–15 letters, digits, or dashes",
+  },
 ];
+
+function validateIdNumber(idType: string, idNumber: string): string | null {
+  const def = ID_TYPES.find((t) => t.value === idType);
+  if (!def) return "Select a document type.";
+  if (!idNumber.trim()) return "Enter the document number.";
+  if (!def.pattern.test(idNumber.trim())) return `Doesn't look like a valid ${def.label} number. ${def.hint}.`;
+  return null;
+}
 
 export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPageProps) {
   const [fullName, setFullName] = useState(user.fullName ?? "");
@@ -54,6 +90,10 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  const [avatarUrl, setAvatarUrl] = useState(() => ((user as { avatarUrl?: string }).avatarUrl ?? ""));
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -67,6 +107,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   const [idSaving, setIdSaving] = useState(false);
   const [idUploading, setIdUploading] = useState(false);
   const [idMessage, setIdMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [idFieldError, setIdFieldError] = useState<string | null>(null);
 
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -96,6 +137,15 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   useEffect(() => {
     loadMethods();
   }, []);
+
+  // Live-validate the ID number as the user types / changes document type.
+  useEffect(() => {
+    if (!idType && !idNumber) {
+      setIdFieldError(null);
+      return;
+    }
+    setIdFieldError(validateIdNumber(idType, idNumber));
+  }, [idType, idNumber]);
 
   const handleAddMethod = async () => {
     if (!newMethodLabel.trim()) return;
@@ -161,6 +211,22 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
     }
   };
 
+  const handleAvatarUpload = async (file: File) => {
+    setAvatarUploading(true);
+    setAvatarError(null);
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const res = await api.uploadAvatar(formData);
+      if (res.success === false) throw new Error(res.message || "Couldn't upload photo.");
+      setAvatarUrl(res.user?.avatarUrl ?? res.avatarUrl ?? "");
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : "Couldn't upload photo.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword) {
       setPasswordMessage({ text: "Fill in both password fields.", ok: false });
@@ -182,8 +248,10 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   };
 
   const handleSaveIdentification = async () => {
-    if (!idType || !idNumber.trim()) {
-      setIdMessage({ text: "Select a document type and enter its number.", ok: false });
+    const validationError = validateIdNumber(idType, idNumber);
+    if (validationError) {
+      setIdFieldError(validationError);
+      setIdMessage({ text: validationError, ok: false });
       return;
     }
     setIdSaving(true);
@@ -233,6 +301,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   const handleNavigate = (label: NavLabel) => onNavigate(LABEL_TO_VIEW[label]);
 
   const hasIdentification = Boolean(user.idType && user.idNumber && idDocumentUrl);
+  const selectedIdDef = ID_TYPES.find((t) => t.value === idType);
 
   return (
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
@@ -246,12 +315,9 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <button onClick={() => onNavigate("notifications")} className="text-stone-400 hover:text-stone-600" aria-label="Notifications">
               <Bell size={19} />
             </button>
-            <button className="text-blue-600 hover:text-blue-700" aria-label="Settings">
-              <SettingsIcon size={19} />
-            </button>
             <button className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200" aria-label="Account">
               <img
-                src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
+                src={avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
                 alt={user.fullName}
                 className="h-full w-full object-cover"
               />
@@ -282,17 +348,31 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <div className="mb-5 flex items-center gap-4">
               <div className="relative">
                 <img
-                  src={`https://api.dicebear.com/7.x/initials/svg?seed=${fullName || "U"}`}
+                  src={avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${fullName || "U"}`}
                   alt={fullName}
                   className="h-16 w-16 rounded-full bg-stone-200 object-cover"
                 />
-                <button className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-white" aria-label="Change photo">
-                  <Camera size={12} />
-                </button>
+                <label
+                  className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-stone-900 text-white hover:bg-stone-800"
+                  aria-label="Change photo"
+                >
+                  {avatarUploading ? <Loader2 size={11} className="animate-spin" /> : <Camera size={12} />}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={avatarUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleAvatarUpload(file);
+                    }}
+                  />
+                </label>
               </div>
               <div>
                 <p className="text-sm font-medium">{fullName || "Your name"}</p>
                 <p className="text-xs text-stone-500">{email}</p>
+                {avatarError && <p className="mt-1 text-xs font-medium text-rose-600">{avatarError}</p>}
               </div>
             </div>
 
@@ -362,6 +442,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
 
             <p className="mb-4 text-xs text-stone-500">
               A valid government ID is required before you can book a room. Your landlord and RoomRent Manager use this to confirm your identity.
+              {" "}This form checks the number's format only — full verification happens after review.
             </p>
 
             {idMessage && (
@@ -389,16 +470,23 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
                 <input
                   value={idNumber}
                   onChange={(e) => setIdNumber(e.target.value)}
-                  placeholder="e.g. 12-34-56-78901"
-                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                  placeholder={selectedIdDef?.placeholder ?? "Select a document type first"}
+                  className={`rounded-lg border px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500 ${
+                    idFieldError ? "border-rose-300" : "border-stone-200"
+                  }`}
                 />
+                {selectedIdDef && (
+                  <span className={`mt-0.5 text-[11px] ${idFieldError ? "text-rose-500" : "text-stone-400"}`}>
+                    {idFieldError ?? selectedIdDef.hint}
+                  </span>
+                )}
               </label>
             </div>
 
             <button
               onClick={handleSaveIdentification}
-              disabled={idSaving}
-              className="mt-3 flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
+              disabled={idSaving || Boolean(idFieldError) || !idType || !idNumber.trim()}
+              className="mt-3 flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-40"
             >
               {idSaving && <Loader2 size={12} className="animate-spin" />}
               Save Identification
