@@ -5,7 +5,7 @@ import HowItWorks from "./HowItWorks";
 import FeaturesSection from "./Features";
 import StatsBar from "./StatsBar";
 import Testimonials from "./Testimonials";
-import FaqSection from "./FaqSection.tsx";
+import FaqSection from "./FaqSection";
 import CTASection from "./CTASection";
 import Footer from "./Footer";
 

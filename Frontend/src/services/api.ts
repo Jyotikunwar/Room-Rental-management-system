@@ -7,7 +7,22 @@ export function getImageUrl(path?: string | null): string | undefined {
   if (/^https?:\/\//i.test(path)) return path;
   return `${UPLOAD_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 }
-
+export interface PublicStats {
+  totalRooms: number;
+  totalLandlords: number;
+  totalTenants: number;
+  satisfactionPercent: number | null;
+}
+ 
+export interface Testimonial {
+  id: number;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  user?: { fullName: string };
+  room?: { city: string };
+}
+ 
 export interface User {
   id: number;
   fullName: string;
@@ -956,5 +971,13 @@ deleteFaq: async (id: number) => {
   });
   return res.json();
 },
+ getPublicStats: async () => {
+  const res = await fetch(`${API_BASE_URL}/public/stats`);
+  return res.json();
+},
  
+getPublicTestimonials: async () => {
+  const res = await fetch(`${API_BASE_URL}/public/testimonials`);
+  return res.json();
+},
 };
