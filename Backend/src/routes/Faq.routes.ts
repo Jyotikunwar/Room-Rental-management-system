@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getFaqs, getAllFaqsAdmin, createFaq, updateFaq, deleteFaq } from "../controllers/faq.controller";
+import { getFaqs, getAllFaqsAdmin, createFaq, updateFaq, deleteFaq } from "../controllers/Faq.controller";
 import { authenticate, authorize } from "../middleware/auth.middleware";
 
 const router = Router();
