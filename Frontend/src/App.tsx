@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api, getUser, setToken, setUser as persistUser, type User } from "./services/api";
 
 import LandingPage from "./components/Landing/LandingPage";
@@ -20,124 +21,168 @@ import AdminDashboard from "./components/Admin/AdminDashboard";
 import type { TenantView } from "./components/Tenant/navigation";
 import "./App.css";
 
-// Screens shown before the person is logged in.
-type AuthView = "landing" | "login" | "signup";
+// Where each role lands after login / when hitting a route they don't own.
+function roleHome(user: User): string {
+  if (user.role === "LANDLORD") return "/landlord";
+  if (user.role === "ADMIN") return "/admin";
+  return "/dashboard";
+}
 
+// ---------------------------------------------------------------------
+// Logged-out routes (redirect away if already authenticated)
+// ---------------------------------------------------------------------
+function LandingRoute() {
+  const navigate = useNavigate();
+  return (
+    <LandingPage
+      onLogin={() => navigate("/login")}
+      onSignup={() => navigate("/signup")}
+      onPostProperty={() => navigate("/signup")}
+      onBrowseRooms={() => navigate("/signup")}
+    />
+  );
+}
+
+function LoginRoute({ onLoggedIn }: { onLoggedIn: (u: User) => void }) {
+  const navigate = useNavigate();
+  return (
+    <LoginPage
+      onLogin={async (email, password) => {
+        const res = await api.login(email, password);
+        if (!res.success) {
+          throw new Error(res.message || "Invalid email or password.");
+        }
+        setToken(res.token);
+        persistUser(res.user);
+        onLoggedIn(res.user);
+        navigate(roleHome(res.user), { replace: true });
+      }}
+      onNavigateToSignup={() => navigate("/signup")}
+    />
+  );
+}
+
+function SignupRoute({ onLoggedIn }: { onLoggedIn: (u: User) => void }) {
+  const navigate = useNavigate();
+  return (
+    <SignupPage
+      onSignup={async ({ fullName, email, password, role }) => {
+        const res = await api.signup({ fullName, email, password, role });
+        if (!res.success) {
+          throw new Error(res.message || "Couldn't create your account.");
+        }
+        setToken(res.token);
+        persistUser(res.user);
+        onLoggedIn(res.user);
+        navigate(roleHome(res.user), { replace: true });
+      }}
+      onNavigateToLogin={() => navigate("/login")}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------
+// Tenant: one URL per view, so back/forward/refresh/deep-links all work.
+// ---------------------------------------------------------------------
+const VIEW_TO_PATH: Record<TenantView, string> = {
+  dashboard: "dashboard",
+  search: "search",
+  saved: "saved",
+  requests: "requests",
+  rental: "rental",
+  payments: "payments",
+  messages: "messages",
+  notifications: "notifications",
+  settings: "settings",
+};
+
+function TenantRoutes({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const navigate = useNavigate();
+  const onNavigate = (view: TenantView) => navigate(`/${VIEW_TO_PATH[view]}`);
+  const sharedProps = { user, onLogout, onNavigate };
+
+  return (
+    <Routes>
+      <Route path="dashboard" element={<TenantDashboard {...sharedProps} />} />
+      <Route path="search" element={<FindProperty {...sharedProps} />} />
+      <Route path="saved" element={<SavedRooms {...sharedProps} />} />
+      <Route path="requests" element={<MyRequests {...sharedProps} />} />
+      <Route path="rental" element={<CurrentRentalPage {...sharedProps} />} />
+      <Route path="payments" element={<PaymentsPage {...sharedProps} />} />
+      <Route path="messages" element={<MessagesPage {...sharedProps} />} />
+      <Route path="notifications" element={<NotificationsPage {...sharedProps} />} />
+      <Route path="settings" element={<SettingsPage {...sharedProps} />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
+
+// ---------------------------------------------------------------------
+// App shell — decides which routes exist based on auth + role.
+// ---------------------------------------------------------------------
 function App() {
   const [user, setUser] = useState<User | null>(getUser());
-  const [authView, setAuthView] = useState<AuthView>("landing");
-  const [tenantView, setTenantView] = useState<TenantView>("dashboard");
 
-  // ---------------------------------------------------------------------
-  // Logged out: Landing -> Login / Signup
-  // ---------------------------------------------------------------------
-  if (!user) {
-    if (authView === "login") {
-      return (
-        <LoginPage
-          onLogin={async (email, password) => {
-            const res = await api.login(email, password);
-            if (!res.success) {
-              throw new Error(res.message || "Invalid email or password.");
-            }
-            setToken(res.token);
-            persistUser(res.user);
-            setUser(res.user);
-          }}
-          onNavigateToSignup={() => setAuthView("signup")}
-        />
-      );
-    }
-
-    if (authView === "signup") {
-      return (
-        <SignupPage
-          onSignup={async ({ fullName, email, password, role }) => {
-            const res = await api.signup({ fullName, email, password, role });
-            if (!res.success) {
-              throw new Error(res.message || "Couldn't create your account.");
-            }
-            setToken(res.token);
-            persistUser(res.user);
-            setUser(res.user);
-          }}
-          onNavigateToLogin={() => setAuthView("login")}
-        />
-      );
-    }
-
-    // authView === "landing"
-    return (
-      <LandingPage
-        onLogin={() => setAuthView("login")}
-        onSignup={() => setAuthView("signup")}
-        onPostProperty={() => setAuthView("signup")}
-        onBrowseRooms={() => setAuthView("signup")}
-      />
-    );
-  }
-
-  // ---------------------------------------------------------------------
-  // Logged in
-  // ---------------------------------------------------------------------
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
-    setTenantView("dashboard");
-    setAuthView("landing");
   };
 
-  // ---- Role-based routing ----
-  if (user.role === "LANDLORD") {
-    return <LandlordDashboard user={user} onLogout={handleLogout} />;
-  }
-
-  if (user.role === "ADMIN") {
-    return <AdminDashboard user={user} onLogout={handleLogout} />;
-  }
-
-  if (user.role === "TENANT") {
-    // setTenantView already matches the (view: TenantView) => void shape
-    // every tenant page expects, so it's passed straight through as onNavigate.
-    const sharedProps = { user, onLogout: handleLogout, onNavigate: setTenantView };
-
-    switch (tenantView) {
-      case "search":
-        return <FindProperty {...sharedProps} />;
-      case "saved":
-        return <SavedRooms {...sharedProps} />;
-      case "requests":
-        return <MyRequests {...sharedProps} />;
-      case "rental":
-        return <CurrentRentalPage {...sharedProps} />;
-      case "payments":
-        return <PaymentsPage {...sharedProps} />;
-      case "messages":
-        return <MessagesPage {...sharedProps} />;
-      case "notifications":
-        return <NotificationsPage {...sharedProps} />;
-      case "settings":
-        return <SettingsPage {...sharedProps} />;
-      default:
-        return <TenantDashboard {...sharedProps} />;
-    }
-  }
-
-  // Fallback for any unrecognized role
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-stone-50 px-4 text-center">
-      <h1 className="text-2xl font-semibold text-stone-900">Welcome, {user.fullName}</h1>
-      <p className="mt-2 max-w-md text-sm text-stone-500">
-        We couldn't find a dashboard for your account role ({user.role}).
-      </p>
-      <button
-        onClick={handleLogout}
-        className="mt-6 rounded-xl bg-stone-900 px-6 py-3 text-sm font-medium text-white hover:bg-stone-800"
-      >
-        Switch Account
-      </button>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* ---- Logged-out only: landing / login / signup ---- */}
+        <Route
+          path="/"
+          element={user ? <Navigate to={roleHome(user)} replace /> : <LandingRoute />}
+        />
+        <Route
+          path="/login"
+          element={user ? <Navigate to={roleHome(user)} replace /> : <LoginRoute onLoggedIn={setUser} />}
+        />
+        <Route
+          path="/signup"
+          element={user ? <Navigate to={roleHome(user)} replace /> : <SignupRoute onLoggedIn={setUser} />}
+        />
+
+        {/* ---- Landlord ---- */}
+        <Route
+          path="/landlord"
+          element={
+            user?.role === "LANDLORD" ? (
+              <LandlordDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to={user ? roleHome(user) : "/login"} replace />
+            )
+          }
+        />
+
+        {/* ---- Admin ---- */}
+        <Route
+          path="/admin"
+          element={
+            user?.role === "ADMIN" ? (
+              <AdminDashboard user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to={user ? roleHome(user) : "/login"} replace />
+            )
+          }
+        />
+
+        {/* ---- Tenant (nested routes: /dashboard, /search, /saved, ...) ---- */}
+        <Route
+          path="/*"
+          element={
+            user?.role === "TENANT" ? (
+              <TenantRoutes user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to={user ? roleHome(user) : "/login"} replace />
+            )
+          }
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

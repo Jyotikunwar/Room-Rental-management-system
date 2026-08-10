@@ -1,4 +1,5 @@
-import { Home, Mail, Phone } from "lucide-react";
+import { useState } from "react";
+import { Home, Mail, Phone, Info } from "lucide-react";
 
 // lucide-react dropped brand/logo icons (Facebook, Instagram, LinkedIn) in
 // recent versions, so these are small inline SVGs instead of icon imports.
@@ -33,9 +34,22 @@ const SOCIAL_LINKS = [
   { icon: LinkedinIcon, label: "LinkedIn", href: "https://linkedin.com/company/horizonrooms" },
 ];
 
-export default function Footer() {
+interface FooterProps {
+  onSavedRoomsClick: () => void;   // requires an account -> routes into login/signup
+  onListPropertyClick: () => void; // routes into landlord signup
+  onManageBookingsClick: () => void; // requires a landlord login
+}
+
+export default function Footer({ onSavedRoomsClick, onListPropertyClick, onManageBookingsClick }: FooterProps) {
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showComingSoon(label: string) {
+    setToast(`${label} isn't available yet — check back soon.`);
+    setTimeout(() => setToast(null), 2500);
+  }
+
   return (
-    <footer id="contact" className="bg-[#0f172a] text-slate-300">
+    <footer id="contact" className="relative bg-[#0f172a] text-slate-300">
       <div className="mx-auto max-w-7xl px-6 py-12">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -71,25 +85,41 @@ export default function Footer() {
             <ul className="mt-3 space-y-2 text-sm text-slate-400">
               <li><a href="#featured-rooms" className="hover:text-white">Browse Rooms</a></li>
               <li><a href="#how-it-works" className="hover:text-white">How It Works</a></li>
-              <li><a href="#" className="hover:text-white">Saved Rooms</a></li>
+              <li>
+                <button onClick={onSavedRoomsClick} className="text-left hover:text-white">
+                  Saved Rooms
+                </button>
+              </li>
             </ul>
           </div>
 
           <div>
             <p className="text-sm font-semibold text-white">For Landlords</p>
             <ul className="mt-3 space-y-2 text-sm text-slate-400">
-              <li><a href="#" className="hover:text-white">List Property</a></li>
-              <li><a href="#" className="hover:text-white">Manage Bookings</a></li>
-              <li><a href="#" className="hover:text-white">Pricing</a></li>
+              <li>
+                <button onClick={onListPropertyClick} className="text-left hover:text-white">
+                  List Property
+                </button>
+              </li>
+              <li>
+                <button onClick={onManageBookingsClick} className="text-left hover:text-white">
+                  Manage Bookings
+                </button>
+              </li>
+              <li>
+                <button onClick={() => showComingSoon("Pricing")} className="text-left hover:text-white">
+                  Pricing
+                </button>
+              </li>
             </ul>
           </div>
 
           <div>
             <p className="text-sm font-semibold text-white">Company</p>
             <ul className="mt-3 space-y-2 text-sm text-slate-400">
-              <li><a href="#" className="hover:text-white">About Us</a></li>
-              <li><a href="#" className="hover:text-white">Contact</a></li>
-              <li><a href="#" className="hover:text-white">FAQ</a></li>
+              <li><button onClick={() => showComingSoon("About Us")} className="text-left hover:text-white">About Us</button></li>
+              <li><a href="#contact" className="hover:text-white">Contact</a></li>
+              <li><button onClick={() => showComingSoon("FAQ")} className="text-left hover:text-white">FAQ</button></li>
             </ul>
             <div className="mt-4 space-y-2 text-sm text-slate-400">
               <a href="mailto:support@horizon.com" className="flex items-center gap-2 hover:text-white">
@@ -105,11 +135,18 @@ export default function Footer() {
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
           <p className="text-xs text-slate-500">© {new Date().getFullYear()} Horizon. All rights reserved.</p>
           <div className="flex gap-4 text-xs text-slate-500">
-            <a href="#" className="hover:text-white">Privacy Policy</a>
-            <a href="#" className="hover:text-white">Terms of Service</a>
+            <button onClick={() => showComingSoon("Privacy Policy")} className="hover:text-white">Privacy Policy</button>
+            <button onClick={() => showComingSoon("Terms of Service")} className="hover:text-white">Terms of Service</button>
           </div>
         </div>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-medium text-gray-800 shadow-lg">
+          <Info size={13} className="text-blue-600" />
+          {toast}
+        </div>
+      )}
     </footer>
   );
 }

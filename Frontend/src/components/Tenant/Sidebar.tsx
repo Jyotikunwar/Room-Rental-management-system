@@ -4,6 +4,7 @@ import {
   MessageSquare, Bell, Settings, LogOut, X, Menu,
 } from "lucide-react";
 import type { User } from "../../services/api";
+import Avatar from "../Avatar";
 
 export const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -30,100 +31,103 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
+// Same dark-navy palette, width, and sticky-full-height behavior as
+// AdminSidebar so Tenant and Admin feel like one consistent product.
 export function Sidebar({ user, active, onNavigate, onSettings, onLogout }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const NavList = ({ onItemClick }: { onItemClick?: () => void }) => (
-    <>
-      <nav className="flex flex-1 flex-col gap-1">
-        {NAV_ITEMS.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            onClick={() => {
-              onNavigate(label);
-              onItemClick?.();
-            }}
-            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-              active === label ? "bg-blue-600 text-white" : "text-stone-300 hover:bg-stone-800"
-            }`}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
-        ))}
+  function handleNavigate(label: NavLabel) {
+    onNavigate(label);
+    setMobileOpen(false);
+  }
+
+  const sidebarContent = (
+    <div className="flex h-full flex-col bg-[#0f172a] text-slate-300">
+      {/* Profile */}
+      <div className="flex items-center gap-3 px-5 py-6">
+        <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={36} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-white">{user.fullName ?? "User"}</p>
+          <p className="truncate text-[10px] font-medium tracking-wider text-slate-400">TENANT</p>
+        </div>
+        <button
+          onClick={() => setMobileOpen(false)}
+          className="ml-auto rounded-md p-1 text-slate-400 hover:bg-white/5 hover:text-white lg:hidden"
+          aria-label="Close menu"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* Nav items */}
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = active === item.label;
+          return (
+            <button
+              key={item.label}
+              onClick={() => handleNavigate(item.label)}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                isActive ? "bg-white text-[#0f172a]" : "text-slate-300 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              <Icon size={18} />
+              {item.label}
+            </button>
+          );
+        })}
       </nav>
-      <div className="mt-4 flex flex-col gap-1 border-t border-stone-800 pt-4">
+
+      {/* Settings + Logout pinned to bottom */}
+      <div className="space-y-1 border-t border-white/5 px-3 py-4">
         <button
           onClick={() => {
             onSettings();
-            onItemClick?.();
+            setMobileOpen(false);
           }}
-          className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-            active === "Settings" ? "bg-blue-600 text-white" : "text-stone-300 hover:bg-stone-800"
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+            active === "Settings" ? "bg-white text-[#0f172a]" : "text-slate-300 hover:bg-white/5 hover:text-white"
           }`}
         >
-          <Settings size={16} /> Settings
+          <Settings size={18} />
+          Settings
         </button>
         <button
           onClick={onLogout}
-          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-stone-300 hover:bg-stone-800"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
         >
-          <LogOut size={16} /> Logout
+          <LogOut size={18} />
+          Logout
         </button>
       </div>
-    </>
+    </div>
   );
 
   return (
     <>
-      {/* Mobile hamburger — fixed so it's available on every page that renders Sidebar */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-xl border border-stone-700 bg-stone-900 text-white shadow-sm sm:hidden"
-        aria-label="Open menu"
-      >
-        <Menu size={17} />
-      </button>
+      {/* Mobile top bar */}
+      <div className="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 lg:hidden">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+        <span className="text-sm font-semibold text-gray-900">RoomRent</span>
+      </div>
 
-      {/* Desktop — sticky */}
-      <aside className="sticky top-0 hidden h-screen w-56 flex-col overflow-y-auto border-r border-stone-800 bg-stone-900 p-4 text-white sm:flex">
-        <div className="mb-6 px-2">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
-              { (user.fullName?.split(" ") || ["U"]).map(n => n[0]).slice(0,2).join("") }
-            </div>
-            <div>
-              <p className="text-sm font-medium">{user.fullName ?? "User"}</p>
-              <p className="text-[11px] text-stone-300">Premium Living</p>
-            </div>
-          </div>
-        </div>
-        <NavList />
-      </aside>
-
-      {/* Mobile — slide-in drawer */}
+      {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 sm:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col overflow-y-auto bg-stone-900 p-4 text-white shadow-xl">
-            <div className="mb-6 flex items-center justify-between px-2">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
-                  { (user.fullName?.split(" ") || ["U"]).map(n => n[0]).slice(0,2).join("") }
-                </div>
-                <div>
-                  <p className="text-sm font-medium">{user.fullName ?? "User"}</p>
-                  <p className="text-[11px] text-stone-300">Premium Living</p>
-                </div>
-              </div>
-              <button onClick={() => setMobileOpen(false)} className="text-stone-300 hover:text-white" aria-label="Close menu">
-                <X size={18} />
-              </button>
-            </div>
-            <NavList onItemClick={() => setMobileOpen(false)} />
-          </aside>
+          <div className="absolute left-0 top-0 h-full w-64 shadow-xl">{sidebarContent}</div>
         </div>
       )}
+
+      {/* Desktop — sticky, full height, same width as AdminSidebar */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 lg:block">{sidebarContent}</aside>
     </>
   );
 }

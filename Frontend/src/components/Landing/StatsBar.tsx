@@ -31,7 +31,7 @@ export default function StatsBar() {
     { label: "Happy Tenants", value: stats ? `${stats.totalTenants}+` : "—" },
     {
       label: "Satisfaction",
-      value: stats?.satisfactionPercent != null ? `${stats.satisfactionPercent}%` : "No reviews yet",
+      value: stats?.satisfactionPercent != null ? `${stats.satisfactionPercent}%` : "",
     },
   ];
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Heart, MapPin } from "lucide-react";
-import { api, type Room } from "../../services/api";
+import { api, UPLOAD_BASE_URL, type Room } from "../../services/api";
 
 interface FeaturedRoomsProps {
   onViewDetails: (roomId: number) => void;
@@ -51,7 +51,7 @@ export default function FeaturedRooms({ onViewDetails }: FeaturedRoomsProps) {
               <div className="relative h-40 bg-gray-100">
                 {room.roomImages?.[0]?.imageUrl ? (
                   <img
-                    src={room.roomImages[0].imageUrl}
+                    src={`${UPLOAD_BASE_URL}${room.roomImages[0].imageUrl}`}
                     alt={room.title}
                     className="h-full w-full object-cover"
                   />

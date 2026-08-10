@@ -32,7 +32,11 @@ export default function LandingPage({ onLogin, onSignup, onPostProperty, onBrows
       <Testimonials />
       <FaqSection />
       <CTASection onBrowseRoomsClick={onBrowseRooms} onListPropertyClick={onPostProperty} />
-      <Footer />
+      <Footer
+        onSavedRoomsClick={onLogin}
+        onListPropertyClick={onPostProperty}
+        onManageBookingsClick={onLogin}
+      />
     </div>
   );
 }
