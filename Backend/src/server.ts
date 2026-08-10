@@ -16,12 +16,17 @@ import adminRoutes from "./routes/admin.routes";
 import publicRoutes from "./routes/public.routes";
 import complaintRoutes from "./routes/Complaint.routes";
 import rentInvoiceRoutes from "./routes/rentInvoice.routes";
+import paymentMethodRoutes from "./routes/paymentMethod.routes";
+import messageRoutes from "./routes/Message.routes";
+import FaqRoutes from "./routes/Faq.routes";
+
+
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-
+app.use("/api/messages", messageRoutes);
 // Serve uploaded room images statically, e.g. http://localhost:5000/uploads/room-123.jpg
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
@@ -43,6 +48,8 @@ app.use("/api/public", publicRoutes);
 app.use("/api/complaints", complaintRoutes);
 app.use("/api/rent-invoices", rentInvoiceRoutes);
 
+app.use("/api/payment-methods", paymentMethodRoutes);
+app.use("/api/faqs", FaqRoutes);
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });

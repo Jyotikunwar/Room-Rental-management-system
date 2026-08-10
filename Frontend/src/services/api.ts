@@ -7,7 +7,22 @@ export function getImageUrl(path?: string | null): string | undefined {
   if (/^https?:\/\//i.test(path)) return path;
   return `${UPLOAD_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 }
-
+export interface PublicStats {
+  totalRooms: number;
+  totalLandlords: number;
+  totalTenants: number;
+  satisfactionPercent: number | null;
+}
+ 
+export interface Testimonial {
+  id: number;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  user?: { fullName: string };
+  room?: { city: string };
+}
+ 
 export interface User {
   id: number;
   fullName: string;
@@ -27,6 +42,17 @@ export interface RoomImage {
   imageUrl: string;
   isPrimary?: boolean;
 }
+ 
+export interface Faq {
+  id: number;
+  question: string;
+  answer: string;
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+ 
 
 export interface Room {
   id: number;
@@ -45,14 +71,47 @@ export interface Room {
   favorites?: { id: number }[];
   landlord?: { id: number; fullName: string; phone?: string; email?: string };
 }
-
+export interface MessageContact {
+  id: number;
+  fullName: string;
+  role: "TENANT" | "LANDLORD" | "ADMIN";
+  phone?: string;
+  email: string;
+  avatarUrl?: string;
+  isOnline: boolean;
+}
+ 
+export interface ConversationSummary {
+  contact: MessageContact;
+  lastMessage: { text: string; createdAt: string; fromMe: boolean };
+  unreadCount: number;
+}
+ 
+export interface ChatMessage {
+  id: number;
+  text: string;
+  senderId: number;
+  fromMe: boolean;
+  isRead: boolean;
+  createdAt: string;
+}
 export interface RecommendationResult {
   room: Room;
   similarityScore: number;
   popularityScore: number;
   finalScore: number;
 }
-
+export interface User {
+  id: number;
+  fullName: string;
+  email: string;
+  phone?: string;
+  role: "TENANT" | "LANDLORD" | "ADMIN";
+  idType?: "CITIZENSHIP" | "PASSPORT" | "NATIONAL_ID" | "DRIVING_LICENSE";
+  idNumber?: string;
+  idDocumentUrl?: string;
+  isIdVerified?: boolean;
+}
 export interface RecommendationLog {
   id: number;
   tenantId?: number;
@@ -162,7 +221,18 @@ export interface MaintenanceRequest {
   issueType?: string; // e.g. "Plumbing", "Electrical", "Appliance/Door" — NOTE: not in schema yet
   createdAt: string;
 }
-
+export interface PaymentMethod {
+  id: number;
+  userId: number;
+  type: "ESEWA" | "KHALTI" | "BANK" | "CASH";
+  label: string;
+  detail?: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+ 
+ 
 // NOTE: none of this exists yet — needs a new admin activity feed, either
 // assembled server-side from existing tables (bookings, inquiries,
 // maintenance, room creation) or backed by a dedicated ActivityLog table.
@@ -723,4 +793,191 @@ export const api = {
     });
     return res.json();
   },
+
+  // Tenant — composite endpoints (dashboard/requests/rental/payments)
+  getMyRequests: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/requests`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  cancelRequest: async (bookingId: number) => {
+    const res = await fetch(`${API_BASE_URL}/tenant/requests/${bookingId}/cancel`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getCurrentRental: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/rental`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  reportMaintenanceIssue: async (bookingId: number, title: string, description: string) => {
+    const res = await fetch(`${API_BASE_URL}/tenant/rental/maintenance`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ bookingId, title, description }),
+    });
+    return res.json();
+  },
+  getPaymentsSummary: async () => {
+    const res = await fetch(`${API_BASE_URL}/tenant/payments/summary`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+getNotificationPreferences: async () => {
+  const res = await fetch(`${API_BASE_URL}/auth/me/notification-preferences`, {
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+},
+
+deleteAccount: async () => {
+  const res = await fetch(`${API_BASE_URL}/auth/me`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+},
+  
+// Add inside the `api = { ... }` object in services/api.ts
+
+  // Saved payment methods
+  getPaymentMethods: async () => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  addPaymentMethod: async (data: { type: string; label: string; detail?: string; isDefault?: boolean }) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  updatePaymentMethod: async (id: number, data: { label?: string; detail?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  setDefaultPaymentMethod: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods/${id}/default`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  deletePaymentMethod: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/payment-methods/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  // ---- Add these two methods inside the `api` object in services/api.ts,
+// near updateProfile/uploadAvatar (same auth-header / multipart patterns). ----
+
+// NOTE: doesn't exist yet — needs a backend route PATCH /auth/me/identification
+// that stores idType + idNumber against the user record (e.g. new columns on
+// User, or a separate Identification table if you also want a review/approval flow).
+updateIdentification: async (data: { idType: string; idNumber: string }) => {
+  const res = await fetch(`${API_BASE_URL}/auth/me/identification`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+},
+
+// NOTE: doesn't exist yet — needs a route accepting multipart/form-data (same
+// shape as uploadAvatar/uploadRoomImages) and storing the file, e.g.
+// POST /auth/me/id-document with the file field named "idDocument".
+uploadIdDocument: async (formData: FormData) => {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}/auth/me/id-document`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  return res.json();
+},
+getConversations: async () => {
+    const res = await fetch(`${API_BASE_URL}/messages/conversations`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getMessagesWithContact: async (contactId: number) => {
+    const res = await fetch(`${API_BASE_URL}/messages/${contactId}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  sendMessageTo: async (receiverId: number, message: string, roomId?: number) => {
+    const res = await fetch(`${API_BASE_URL}/messages`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ receiverId, message, roomId }),
+    });
+    return res.json();
+  },
+  markConversationRead: async (contactId: number) => {
+    const res = await fetch(`${API_BASE_URL}/messages/${contactId}/read`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getFaqs: async () => {
+  const res = await fetch(`${API_BASE_URL}/faqs`);
+  return res.json();
+},
+ 
+// Admin-only — for a future FAQ management screen
+getAllFaqsAdmin: async () => {
+  const res = await fetch(`${API_BASE_URL}/faqs/admin/all`, { headers: getAuthHeaders() });
+  return res.json();
+},
+createFaq: async (data: { question: string; answer: string; order?: number }) => {
+  const res = await fetch(`${API_BASE_URL}/faqs`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+},
+updateFaq: async (id: number, data: { question?: string; answer?: string; order?: number; isActive?: boolean }) => {
+  const res = await fetch(`${API_BASE_URL}/faqs/${id}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
+},
+deleteFaq: async (id: number) => {
+  const res = await fetch(`${API_BASE_URL}/faqs/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  return res.json();
+},
+ getPublicStats: async () => {
+  const res = await fetch(`${API_BASE_URL}/public/stats`);
+  return res.json();
+},
+ 
+getPublicTestimonials: async () => {
+  const res = await fetch(`${API_BASE_URL}/public/testimonials`);
+  return res.json();
+},
 };

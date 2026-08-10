@@ -41,11 +41,11 @@ enum PaymentStatus {
   REFUNDED
 }
 
-enum PaymentMethod {
+enum SavedPaymentMethodType {
   ESEWA
   KHALTI
-  CASH
   BANK
+  CASH
 }
 
 enum ComplaintStatus {
@@ -53,12 +53,6 @@ enum ComplaintStatus {
   IN_PROGRESS
   RESOLVED
   REJECTED
-}
-
-enum ComplaintPriority {
-  LOW
-  MEDIUM
-  HIGH
 }
 
 enum NotificationType {
@@ -69,18 +63,28 @@ enum NotificationType {
   SYSTEM
 }
 
+enum IdentificationType {
+  CITIZENSHIP
+  PASSPORT
+  NATIONAL_ID
+  DRIVING_LICENSE
+}
+
 model User {
-  id       Int     @id @default(autoincrement())
-  fullName String
-  email    String  @unique
-  password String
-  phone    String?
-  role     Role    @default(TENANT)
-
-  avatarUrl String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                Int                 @id @default(autoincrement())
+  fullName          String
+  email             String              @unique
+  password          String
+  phone             String?
+  role              Role                @default(TENANT)
+  avatarUrl         String?
+  notificationPrefs Json?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  idType            IdentificationType?
+  idNumber          String?
+  idDocumentUrl     String?
+  isIdVerified      Boolean             @default(false)
 
   rooms      Room[]
   bookings   Booking[]
@@ -90,9 +94,11 @@ model User {
 
   sentMessages     Message[] @relation("Sender")
   receivedMessages Message[] @relation("Receiver")
+  lastActiveAt     DateTime?
 
   notifications      Notification[]
   recommendationLogs RecommendationLog[]
+  paymentMethods     PaymentMethod[]
 }
 
 model Room {
@@ -196,9 +202,8 @@ model Booking {
 
   payment Payment?
 
+  complaints   Complaint[]
   rentInvoices RentInvoice[]
-
-  complaints Complaint[]
 
   @@index([status])
 }
@@ -211,7 +216,7 @@ model Payment {
 
   amount Int
 
-  paymentMethod PaymentMethod
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
   transactionId String? @unique
 
@@ -219,35 +224,22 @@ model Payment {
 
   paidAt DateTime?
 
-  createdAt DateTime @default(now())
+  createdAt       DateTime @default(now())
+  paymentMethodId Int
 }
 
-model RentInvoice {
-  id Int @id @default(autoincrement())
-
-  bookingId Int
-  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-
-  periodStart DateTime
-  periodEnd   DateTime
-
-  amount Int
-
-  dueDate DateTime
-
-  status PaymentStatus @default(PENDING)
-
-  paymentMethod PaymentMethod?
-  transactionId String?        @unique
-
-  paidAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([bookingId])
-  @@index([dueDate])
+model PaymentMethod {
+  id           Int                    @id @default(autoincrement())
+  userId       Int
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         SavedPaymentMethodType
+  label        String
+  detail       String?
+  isDefault    Boolean                @default(false)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  payments     Payment[]
+  rentInvoices RentInvoice[]
 }
 
 model Favorite {
@@ -292,8 +284,6 @@ model Complaint {
   title String
 
   description String
-
-  priority ComplaintPriority @default(MEDIUM)
 
   status ComplaintStatus @default(PENDING)
 
@@ -349,9 +339,49 @@ model RecommendationLog {
   createdAt       DateTime @default(now())
 
   tenant User? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([roomId])
+}
+
+model Faq {
+  id        Int      @id @default(autoincrement())
+  question  String
+  answer    String
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+}
+
+model RentInvoice {
+  id Int @id @default(autoincrement())
+
+  bookingId Int
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  amount Int
+
+  dueDate DateTime
+
+  status PaymentStatus @default(PENDING)
+
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  transactionId String?        @unique
+
+  paidAt DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  paymentMethodId Int?
+
+  @@index([status])
+  @@index([bookingId])
+  @@index([dueDate])
 }

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyToken, JwtPayload } from "../lib/jwt";
+import prisma from "../lib/prisma";
 
 // Extend Express Request to carry the logged-in user
 export interface AuthRequest extends Request {
@@ -19,6 +20,13 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   try {
     const decoded = verifyToken(token);
     req.user = decoded;
+
+    // Best-effort "last active" heartbeat, powers online/offline status in
+    // Messages. Fire-and-forget — never await or let this block/fail the request.
+    prisma.user
+      .update({ where: { id: decoded.id }, data: { lastActiveAt: new Date() } })
+      .catch(() => {});
+
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: "Invalid or expired token" });

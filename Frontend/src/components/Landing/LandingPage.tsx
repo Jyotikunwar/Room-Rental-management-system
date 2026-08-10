@@ -5,6 +5,7 @@ import HowItWorks from "./HowItWorks";
 import FeaturesSection from "./Features";
 import StatsBar from "./StatsBar";
 import Testimonials from "./Testimonials";
+import FaqSection from "./FaqSection";
 import CTASection from "./CTASection";
 import Footer from "./Footer";
 
@@ -29,6 +30,7 @@ export default function LandingPage({ onLogin, onSignup, onPostProperty, onBrows
       <FeaturesSection />
       <StatsBar />
       <Testimonials />
+      <FaqSection />
       <CTASection onBrowseRoomsClick={onBrowseRooms} onListPropertyClick={onPostProperty} />
       <Footer />
     </div>

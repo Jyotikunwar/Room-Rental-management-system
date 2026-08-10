@@ -35,4 +35,4 @@ router.get("/:id", getRoomById);
 router.get("/:id/recommendations", getRoomRecommendations);
 
 export default router;
-
+
