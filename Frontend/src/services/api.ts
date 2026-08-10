@@ -980,4 +980,24 @@ getPublicTestimonials: async () => {
   const res = await fetch(`${API_BASE_URL}/public/testimonials`);
   return res.json();
 },
+
+// ADD these two methods inside the `api = { ... }` object, near your
+// existing getLandlords/getLandlordStats (those two already exist).
+
+  toggleLandlordStatus: async (id: number, isActive: boolean) => {
+    const res = await fetch(`${API_BASE_URL}/admin/landlords/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ isActive }),
+    });
+    return res.json();
+  },
+  updateLandlordProfile: async (id: number, data: { fullName?: string; phone?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/landlords/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
 };

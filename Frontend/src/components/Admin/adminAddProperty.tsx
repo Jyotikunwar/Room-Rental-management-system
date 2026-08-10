@@ -17,31 +17,35 @@ interface AdminAddPropertyProps {
   onNavigate: (route: AdminRoute) => void;
 }
 
+// Matches the real Room schema fields exactly — "propertyType" (free text),
+// "zip", and "leaseTerm" from the earlier version don't exist as columns,
+// so they've been replaced with roomType (the actual enum) and
+// availableFrom, and leaseTerm/zip were dropped.
 interface PropertyFormState {
   title: string;
-  propertyType: string;
+  roomType: "SINGLE" | "DOUBLE" | "FLAT" | "APARTMENT";
   description: string;
   addressLine: string;
   city: string;
-  areaZip: string;
+  location: string;
   monthlyRent: string;
   securityDeposit: string;
-  leaseTerm: string;
+  availableFrom: string;
 }
 
 const EMPTY_FORM: PropertyFormState = {
   title: "",
-  propertyType: "Apartment",
+  roomType: "APARTMENT",
   description: "",
   addressLine: "",
   city: "",
-  areaZip: "",
+  location: "",
   monthlyRent: "",
   securityDeposit: "",
-  leaseTerm: "12 Months",
+  availableFrom: "",
 };
 
-export default function AdminAddProperty({ user, onLogout, activeRoute, onNavigate }: AdminAddPropertyProps) {
+export default function AdminAddProperty({ onLogout, activeRoute, onNavigate }: Omit<AdminAddPropertyProps, 'user'>) {
   const [form, setForm] = useState<PropertyFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,33 +58,30 @@ export default function AdminAddProperty({ user, onLogout, activeRoute, onNaviga
     e.preventDefault();
     setError(null);
 
-    if (!form.title.trim() || !form.addressLine.trim() || !form.city.trim() || !form.monthlyRent) {
+    if (!form.title.trim() || !form.addressLine.trim() || !form.city.trim() || !form.location.trim() || !form.monthlyRent) {
       setError("Please fill in all required fields.");
       return;
     }
 
     setSaving(true);
     try {
-      // NOTE: adjust field names/method to match your real api.ts —
-      // this assumes an api.createRoom() endpoint similar to other
-      // admin write calls.
       const res = await api.createRoom({
-        title: form.title,
-        propertyType: form.propertyType,
-        description: form.description,
-        location: form.addressLine,
-        city: form.city,
-        zip: form.areaZip,
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        roomType: form.roomType,
+        city: form.city.trim(),
+        location: form.location.trim(),
+        address: form.addressLine.trim(),
         price: Number(form.monthlyRent) || 0,
-        securityDeposit: Number(form.securityDeposit) || 0,
-        leaseTerm: form.leaseTerm,
+        securityDeposit: form.securityDeposit ? Number(form.securityDeposit) : undefined,
+        availableFrom: form.availableFrom || undefined,
       });
 
       if (res?.success) {
         setForm(EMPTY_FORM);
         onNavigate("properties");
       } else {
-        setError("Failed to create property. Please try again.");
+        setError(res?.message || "Failed to create property. Please try again.");
       }
     } catch (err) {
       console.error("Failed to create property:", err);
@@ -146,17 +147,16 @@ export default function AdminAddProperty({ user, onLogout, activeRoute, onNaviga
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Property Type</label>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Room Type</label>
                   <select
-                    value={form.propertyType}
-                    onChange={(e) => update("propertyType", e.target.value)}
+                    value={form.roomType}
+                    onChange={(e) => update("roomType", e.target.value as PropertyFormState["roomType"])}
                     className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-gray-900"
                   >
-                    <option>Apartment</option>
-                    <option>Studio</option>
-                    <option>House</option>
-                    <option>Room</option>
-                    <option>Condo</option>
+                    <option value="SINGLE">Single Room</option>
+                    <option value="DOUBLE">Double Room</option>
+                    <option value="FLAT">Flat</option>
+                    <option value="APARTMENT">Apartment</option>
                   </select>
                 </div>
 
@@ -201,17 +201,17 @@ export default function AdminAddProperty({ user, onLogout, activeRoute, onNaviga
                       type="text"
                       value={form.city}
                       onChange={(e) => update("city", e.target.value)}
-                      placeholder="New York"
+                      placeholder="Kathmandu"
                       className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700">Area / ZIP</label>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">Location / Area</label>
                     <input
                       type="text"
-                      value={form.areaZip}
-                      onChange={(e) => update("areaZip", e.target.value)}
-                      placeholder="10001"
+                      value={form.location}
+                      onChange={(e) => update("location", e.target.value)}
+                      placeholder="Baneshwor"
                       className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
                     />
                   </div>
@@ -219,13 +219,13 @@ export default function AdminAddProperty({ user, onLogout, activeRoute, onNaviga
               </div>
             </section>
 
-            {/* Pricing & Lease */}
+            {/* Pricing & Availability */}
             <section className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="mb-4 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                   <Banknote size={14} />
                 </span>
-                <h2 className="text-base font-semibold text-gray-900">Pricing & Lease</h2>
+                <h2 className="text-base font-semibold text-gray-900">Pricing &amp; Availability</h2>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -235,7 +235,7 @@ export default function AdminAddProperty({ user, onLogout, activeRoute, onNaviga
                     type="number"
                     value={form.monthlyRent}
                     onChange={(e) => update("monthlyRent", e.target.value)}
-                    placeholder="1500"
+                    placeholder="15000"
                     className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
                   />
                 </div>
@@ -245,22 +245,18 @@ export default function AdminAddProperty({ user, onLogout, activeRoute, onNaviga
                     type="number"
                     value={form.securityDeposit}
                     onChange={(e) => update("securityDeposit", e.target.value)}
-                    placeholder="1500"
+                    placeholder="15000"
                     className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Lease Term</label>
-                  <select
-                    value={form.leaseTerm}
-                    onChange={(e) => update("leaseTerm", e.target.value)}
-                    className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-gray-900"
-                  >
-                    <option>6 Months</option>
-                    <option>12 Months</option>
-                    <option>24 Months</option>
-                    <option>Month-to-Month</option>
-                  </select>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Available From</label>
+                  <input
+                    type="date"
+                    value={form.availableFrom}
+                    onChange={(e) => update("availableFrom", e.target.value)}
+                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
+                  />
                 </div>
               </div>
             </section>

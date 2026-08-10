@@ -92,10 +92,10 @@ model User {
   reviews    Review[]
   complaints Complaint[]
 
-  sentMessages     Message[] @relation("Sender")
-  receivedMessages Message[] @relation("Receiver")
-  lastActiveAt     DateTime?
-
+  sentMessages       Message[]           @relation("Sender")
+  receivedMessages   Message[]           @relation("Receiver")
+  lastActiveAt       DateTime?
+  isActive           Boolean             @default(true)
   notifications      Notification[]
   recommendationLogs RecommendationLog[]
   paymentMethods     PaymentMethod[]

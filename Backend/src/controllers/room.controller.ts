@@ -21,7 +21,7 @@ async function resolveAmenityIds(names?: string[]): Promise<number[]> {
   return amenities.map((a) => a.id);
 }
 
-// POST /rooms  (protected - LANDLORD only)
+// POST /rooms  (protected - LANDLORD or ADMIN)
 export const createRoom = async (req: AuthRequest, res: Response) => {
   try {
     const parsed = createRoomSchema.safeParse(req.body);
@@ -59,6 +59,10 @@ export const createRoom = async (req: AuthRequest, res: Response) => {
 };
 
 // GET /rooms  (public - Multi-Criteria Search & Filtering)
+// status=ALL means "don't filter by status at all" (used by the admin
+// properties list, which needs AVAILABLE/BOOKED/UNDER_MAINTENANCE together).
+// This was the bug: "ALL" was being passed straight to Prisma as if it were
+// a real RoomStatus enum value, which crashed with a validation error.
 export const getRooms = async (req: AuthRequest, res: Response) => {
   try {
     const {
@@ -104,13 +108,22 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
     if (sortBy === "price_desc") orderBy = { price: "desc" };
     if (sortBy === "oldest") orderBy = { createdAt: "asc" };
 
+    // Build the status condition separately so "ALL" can mean "omit this
+    // filter entirely" instead of being sent to Prisma as a literal value.
+    const statusCondition =
+      status === "ALL"
+        ? []
+        : status
+        ? [{ status: status as any }]
+        : [{ status: "AVAILABLE" as const }];
+
     const rooms = await prisma.room.findMany({
       where: {
         AND: [
           ...(city ? [{ city: { equals: String(city) } }] : []),
           ...(location ? [{ location: { contains: String(location), mode: "insensitive" as const } }] : []),
           ...(roomType ? [{ roomType: roomType as any }] : []),
-          ...(status ? [{ status: status as any }] : [{ status: "AVAILABLE" as const }]),
+          ...statusCondition,
           ...(minPrice || maxPrice
             ? [
                 {
@@ -177,7 +190,7 @@ export const getRoomById = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// PUT /rooms/:id  (protected - owner only)
+// PATCH /rooms/:id  (protected - owner, or ADMIN for any room)
 export const updateRoom = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -187,7 +200,9 @@ export const updateRoom = async (req: AuthRequest, res: Response) => {
     if (!existingRoom) {
       return res.status(404).json({ success: false, message: "Room not found" });
     }
-    if (existingRoom.landlordId !== req.user!.id) {
+    const isOwner = existingRoom.landlordId === req.user!.id;
+    const isAdmin = req.user!.role === "ADMIN";
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ success: false, message: "Not authorized to edit this room" });
     }
 
@@ -202,9 +217,7 @@ export const updateRoom = async (req: AuthRequest, res: Response) => {
 
     const { amenities, availableFrom, ...roomData } = parsed.data;
 
-    // Only touch amenities if the request actually included that field —
-    // this is what was missing before: amenityIds/amenities was parsed but
-    // never written back to the database on update.
+    // Only touch amenities if the request actually included that field.
     if (amenities !== undefined) {
       const amenityIds = await resolveAmenityIds(amenities);
       await prisma.roomAmenity.deleteMany({ where: { roomId } });
@@ -231,7 +244,7 @@ export const updateRoom = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// DELETE /rooms/:id  (protected - owner only)
+// DELETE /rooms/:id  (protected - owner, or ADMIN for any room)
 export const deleteRoom = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -240,7 +253,9 @@ export const deleteRoom = async (req: AuthRequest, res: Response) => {
     if (!existingRoom) {
       return res.status(404).json({ success: false, message: "Room not found" });
     }
-    if (existingRoom.landlordId !== req.user!.id) {
+    const isOwner = existingRoom.landlordId === req.user!.id;
+    const isAdmin = req.user!.role === "ADMIN";
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ success: false, message: "Not authorized to delete this room" });
     }
 
@@ -297,7 +312,7 @@ export const getRoomRecommendations = async (req: AuthRequest, res: Response) =>
   }
 };
 
-// POST /rooms/:id/images (protected - LANDLORD only, upload multiple images)
+// POST /rooms/:id/images (protected - owner or ADMIN, upload multiple images)
 export const uploadRoomImages = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -312,11 +327,12 @@ export const uploadRoomImages = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: "Room not found" });
     }
 
-    if (room.landlordId !== req.user!.id) {
+    const isOwner = room.landlordId === req.user!.id;
+    const isAdmin = req.user!.role === "ADMIN";
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ success: false, message: "Not authorized to upload images for this room" });
     }
 
-    // If this room has no images yet, the first uploaded file becomes primary.
     const existingCount = await prisma.roomImage.count({ where: { roomId: Number(id) } });
 
     const imageRecords = files.map((file, index) => ({
