@@ -15,12 +15,12 @@ import tenantRoutes from "./routes/tenant.routes";
 import adminRoutes from "./routes/admin.routes";
 import publicRoutes from "./routes/public.routes";
 import complaintRoutes from "./routes/Complaint.routes";
+import rentInvoiceRoutes from "./routes/rentInvoice.routes";
 import paymentMethodRoutes from "./routes/paymentMethod.routes";
 import messageRoutes from "./routes/Message.routes";
 import FaqRoutes from "./routes/Faq.routes";
 
 
-// ...
 
 const app = express();
 
@@ -46,6 +46,8 @@ app.use("/api/tenant", tenantRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/public", publicRoutes);
 app.use("/api/complaints", complaintRoutes);
+app.use("/api/rent-invoices", rentInvoiceRoutes);
+
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/faqs", FaqRoutes);
 // 404 handler

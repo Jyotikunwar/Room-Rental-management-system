@@ -2,6 +2,7 @@ const API_BASE = "http://localhost:5000";
 export const API_BASE_URL = `${API_BASE}/api`;
 export const UPLOAD_BASE_URL = API_BASE;
 
+
 export function getImageUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
@@ -23,12 +24,14 @@ export interface Testimonial {
   room?: { city: string };
 }
  
+
 export interface User {
   id: number;
   fullName: string;
   email: string;
   phone?: string;
   role: "TENANT" | "LANDLORD" | "ADMIN";
+  avatarUrl?: string;
 }
 
 export interface Amenity {
@@ -61,8 +64,13 @@ export interface Room {
   description?: string;
   city: string;
   location: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
   roomType: "SINGLE" | "DOUBLE" | "FLAT" | "APARTMENT";
   price: number;
+  securityDeposit?: number;
+  availableFrom?: string;
   status: "AVAILABLE" | "BOOKED" | "UNDER_MAINTENANCE";
   createdAt?: string;
   roomImages?: RoomImage[];
@@ -149,12 +157,12 @@ export interface Booking {
   room?: Room;
   payment?: Payment;
   tenant?: User;
-  // NOTE: neither field exists in the backend yet — needed for the new
-  // Tenants page's "New Tenant Requests" table (credit score, application docs).
-  creditScore?: number;
-  documentUrl?: string;
+  creditScore?: number; // NOTE: still not in the schema — not part of this batch of work
+  documentUrl?: string; // NOTE: still not in the schema — not part of this batch of work
 }
 
+// One-time payment tied to a booking (bookingId is @unique in your schema).
+// Kept separate from RentInvoice, which handles recurring monthly rent.
 export interface Payment {
   id: number;
   bookingId: number;
@@ -165,6 +173,36 @@ export interface Payment {
   paidAt?: string;
   createdAt: string;
   booking?: Booking;
+}
+
+// Recurring rent — one row per calendar month of a lease. "OVERDUE" is
+// never stored; it's computed server-side and returned as effectiveStatus.
+export interface RentInvoice {
+  id: number;
+  bookingId: number;
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  dueDate: string;
+  status: "PENDING" | "PAID" | "FAILED" | "REFUNDED";
+  effectiveStatus: "PENDING" | "PAID" | "FAILED" | "REFUNDED" | "OVERDUE";
+  paymentMethod?: "ESEWA" | "KHALTI" | "CASH" | "BANK";
+  transactionId?: string;
+  paidAt?: string;
+  createdAt: string;
+  booking?: {
+    room?: { id: number; title: string; city: string; location: string };
+    tenant?: { id: number; fullName: string; email: string; phone?: string };
+  };
+}
+
+export interface LandlordInvoiceStats {
+  totalRevenue: number;
+  monthlyCollections: number;
+  pendingAmount: number;
+  pendingCount: number;
+  overdueAmount: number;
+  overdueCount: number;
 }
 
 export interface Notification {
@@ -205,22 +243,23 @@ export interface TenantDashboardData {
   recommendations: RecommendationResult[];
 }
 
-// NOTE: no backend model exists yet for maintenance requests — add this on
-// the server (roomId, description, priority, status, reportedBy, assignedTo,
-// issueType, createdAt) before getMaintenanceRequests/updateMaintenanceStatus/
-// getAdminMaintenanceRequests below will work.
+// Matches your real Complaint model — bookingId-scoped, filed by a tenant
+// against their own booking, resolved by the landlord who owns the room.
 export interface MaintenanceRequest {
   id: number;
-  roomId: number;
-  room?: Room;
+  bookingId: number;
+  title: string;
   description: string;
   priority: "LOW" | "MEDIUM" | "HIGH";
-  status: "OPEN" | "IN_PROGRESS" | "RESOLVED";
-  reportedBy?: { fullName: string };
-  assignedTo?: { fullName: string } | null;
-  issueType?: string; // e.g. "Plumbing", "Electrical", "Appliance/Door" — NOTE: not in schema yet
+  status: "PENDING" | "IN_PROGRESS" | "RESOLVED" | "REJECTED";
   createdAt: string;
+  updatedAt?: string;
+  booking?: {
+    room?: { id: number; title: string; city: string; location: string };
+  };
+  user?: { id: number; fullName: string; email: string; phone?: string };
 }
+
 export interface PaymentMethod {
   id: number;
   userId: number;
@@ -236,6 +275,10 @@ export interface PaymentMethod {
 // NOTE: none of this exists yet — needs a new admin activity feed, either
 // assembled server-side from existing tables (bookings, inquiries,
 // maintenance, room creation) or backed by a dedicated ActivityLog table.
+
+// NOTE: still not built — needs a new admin activity feed, either assembled
+// server-side from existing tables or backed by a dedicated ActivityLog table.
+
 export interface AdminActivityEntry {
   id: number;
   category: "PAYMENT" | "MAINTENANCE" | "PROPERTY" | "TENANT" | "LANDLORD" | "MESSAGE";
@@ -245,8 +288,6 @@ export interface AdminActivityEntry {
   status?: string;
 }
 
-// NOTE: none of this exists yet — a landlord-scoped activity feed mirroring
-// AdminActivityEntry but filtered to the logged-in landlord's own data.
 export interface LandlordActivityEntry {
   id: number;
   category: "MESSAGE" | "PAYMENT" | "MAINTENANCE" | "SYSTEM";
@@ -255,9 +296,8 @@ export interface LandlordActivityEntry {
   createdAt: string;
 }
 
-// NOTE: none of this exists yet — a unified admin inbox needs new tables
-// for online presence and merged tenant/landlord threads (Inquiry alone
-// doesn't cover this).
+// NOTE: still not built — unified admin inbox needs new tables for online
+// presence and merged thread grouping on top of your Message model.
 export interface AdminMessageThread {
   contactId: number;
   contactName: string;
@@ -288,10 +328,8 @@ export interface AdminContactProfile {
   recentActivity?: { title: string; date: string }[];
 }
 
-// NOTE: none of this exists yet. Room.reviews only covers property reviews
-// today — "Landlord Reviews" and "Tenant Reviews" as separate target types
-// need a new reviews table (or a targetType column) plus an admin-wide
-// aggregation endpoint.
+// NOTE: still not built — Landlord/Tenant "reviews" as separate target
+// types need a new model beyond your roomId-scoped Review.
 export interface AdminReviewEntry {
   id: number;
   reviewerName: string;
@@ -307,12 +345,12 @@ export interface AdminReviewStats {
   totalReviews: number;
   totalReviewsGrowthPct?: number;
   averageRating: number;
-  positiveReviews: number; // 4-5 stars
-  negativeReviews: number; // 1-2 stars
+  positiveReviews: number;
+  negativeReviews: number;
 }
 
-// NOTE: doesn't exist yet — a landlord rating a tenant is a new concept
-// (Room.reviews only covers tenants/guests rating a property).
+// NOTE: still not built — a landlord rating a tenant (your Review model
+// only covers tenants rating a property).
 export interface TenantReview {
   id: number;
   tenantId: number;
@@ -368,7 +406,6 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: backend route PATCH /auth/me must exist for this to work.
   updateProfile: async (data: { fullName?: string; phone?: string }) => {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       method: "PATCH",
@@ -377,8 +414,6 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: doesn't exist yet — needs a route accepting multipart/form-data
-  // and storing the avatar (e.g. alongside room image uploads).
   uploadAvatar: async (formData: FormData) => {
     const token = getToken();
     const res = await fetch(`${API_BASE_URL}/auth/me/avatar`, {
@@ -390,8 +425,6 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: doesn't exist yet — needs a route that verifies currentPassword
-  // against the stored hash before updating.
   changePassword: async (currentPassword: string, newPassword: string) => {
     const res = await fetch(`${API_BASE_URL}/auth/me/password`, {
       method: "PATCH",
@@ -400,8 +433,7 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: doesn't exist yet — needs a route to persist per-channel
-  // (email/sms/push) notification preferences per category.
+  // NOTE: still not built — no schema field or route for this yet.
   updateNotificationPreferences: async (prefs: Record<string, { email?: boolean; sms?: boolean; push?: boolean }>) => {
     const res = await fetch(`${API_BASE_URL}/auth/me/notification-preferences`, {
       method: "PATCH",
@@ -410,7 +442,7 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: doesn't exist yet — needs a route to enable/disable 2FA on the account.
+  // NOTE: still not built — no schema field or route for this yet.
   toggleTwoFactor: async (enabled: boolean) => {
     const res = await fetch(`${API_BASE_URL}/auth/me/two-factor`, {
       method: "PATCH",
@@ -438,16 +470,14 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: backend route PATCH /rooms/:id must exist for this to work.
   updateRoom: async (id: number, data: any) => {
     const res = await fetch(`${API_BASE_URL}/rooms/${id}`, {
-      method: "PATCH",
+      method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return res.json();
   },
-  // NOTE: backend route DELETE /rooms/:id must exist for this to work.
   deleteRoom: async (id: number) => {
     const res = await fetch(`${API_BASE_URL}/rooms/${id}`, {
       method: "DELETE",
@@ -547,12 +577,8 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: backend route POST /inquiries must accept an explicit receiverId
-  // for the landlord->tenant direction (the existing sendInquiry likely
-  // infers the receiver as the room's landlord, which only covers
-  // tenant->landlord). Adjust the route/body shape to match your backend.
   replyToInquiry: async (roomId: number, receiverId: number, message: string) => {
-    const res = await fetch(`${API_BASE_URL}/inquiries`, {
+    const res = await fetch(`${API_BASE_URL}/inquiries/reply`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ roomId, receiverId, message }),
@@ -573,8 +599,6 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: neither of these exist yet — see AdminReviewEntry/AdminReviewStats
-  // comment above. Needs a targetType-aware reviews model.
   getAdminReviews: async (params?: { target?: string; page?: number; limit?: number }) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     const res = await fetch(`${API_BASE_URL}/admin/reviews?${query}`, {
@@ -588,7 +612,6 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: doesn't exist yet — see TenantReview comment above.
   getTenantReviews: async () => {
     const res = await fetch(`${API_BASE_URL}/landlord/tenant-reviews`, {
       headers: getAuthHeaders(),
@@ -603,9 +626,6 @@ export const api = {
     });
     return res.json();
   },
-  // NOTE: none of these exist yet — see the comment blocks above each
-  // matching interface (Landlords, Payments, Bookings, Maintenance,
-  // Messages, Activity are all new admin-wide aggregation endpoints).
   getLandlords: async (params?: Record<string, any>) => {
     const query = new URLSearchParams(params).toString();
     const res = await fetch(`${API_BASE_URL}/admin/landlords?${query}`, {
@@ -641,13 +661,13 @@ export const api = {
   },
   getAdminMaintenanceRequests: async (params?: Record<string, any>) => {
     const query = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE_URL}/admin/maintenance?${query}`, {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints?${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
   },
   assignMaintenanceRequest: async (id: number, assigneeId: number) => {
-    const res = await fetch(`${API_BASE_URL}/maintenance/${id}/assign`, {
+    const res = await fetch(`${API_BASE_URL}/complaints/${id}/assign`, {
       method: "PATCH",
       headers: getAuthHeaders(),
       body: JSON.stringify({ assigneeId }),
@@ -682,12 +702,13 @@ export const api = {
     return res.json();
   },
 
-  // Landlord — NOTE: none of these three exist yet.
+  // Landlord — activity feed still not built (see LandlordActivityEntry note).
   getLandlordActivity: async (params?: { category?: string; page?: number }) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     const res = await fetch(`${API_BASE_URL}/landlord/activity?${query}`, { headers: getAuthHeaders() });
     return res.json();
   },
+  // NOTE: platform fee concept still not built — no model, no billing logic.
   getPlatformFeeStatus: async () => {
     const res = await fetch(`${API_BASE_URL}/landlord/platform-fee`, { headers: getAuthHeaders() });
     return res.json();
@@ -759,7 +780,7 @@ export const api = {
     return res.json();
   },
 
-  // Payments
+  // Payments — one-time (tied 1:1 to a booking, via your original Payment model)
   getMyPayments: async () => {
     const res = await fetch(`${API_BASE_URL}/payments/my-payments`, {
       headers: getAuthHeaders(),
@@ -774,19 +795,60 @@ export const api = {
     });
     return res.json();
   },
+  getLandlordPayments: async (params?: { status?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/payments/landlord?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
 
-  // Maintenance — NOTE: backend model + routes don't exist yet.
-  // Add a MaintenanceRequest table (roomId, description, priority, status,
-  // reportedBy, assignedTo, issueType, createdAt) and these two routes
-  // before using the landlord-scoped maintenance page.
-  getMaintenanceRequests: async () => {
-    const res = await fetch(`${API_BASE_URL}/maintenance/landlord`, {
+  // Rent Invoices — recurring monthly rent (new RentInvoice model)
+  getTenantRentInvoices: async () => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/tenant`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getLandlordRentInvoices: async (params?: { status?: string; propertyId?: number }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/landlord?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getLandlordInvoiceStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/landlord/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  payRentInvoice: async (id: number, paymentMethod: string) => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/${id}/pay`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ paymentMethod }),
+    });
+    return res.json();
+  },
+  sendRentReminder: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/${id}/remind`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  // Maintenance — backed by your real Complaint model at /api/complaints.
+  getMaintenanceRequests: async (params?: { status?: string; priority?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/complaints/landlord?${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
   },
   updateMaintenanceStatus: async (id: number, status: string) => {
-    const res = await fetch(`${API_BASE_URL}/maintenance/${id}/status`, {
+    const res = await fetch(`${API_BASE_URL}/complaints/${id}/status`, {
       method: "PATCH",
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),

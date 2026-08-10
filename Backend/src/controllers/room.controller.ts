@@ -277,6 +277,8 @@ export const getMyRooms = async (req: AuthRequest, res: Response) => {
         roomImages: true,
         roomAmenities: { include: { amenity: true } },
         bookings: true,
+        // ← added: reviews.tsx reads room.reviews from this exact response
+        reviews: { include: { user: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } },
       },
       orderBy: { createdAt: "desc" },
     });

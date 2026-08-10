@@ -82,60 +82,93 @@ export const getCurrentUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// PATCH /api/auth/me  (protected)
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const { fullName, phone } = req.body;
+
+    if (fullName !== undefined && (typeof fullName !== "string" || fullName.trim().length < 2)) {
+      return res.status(400).json({ success: false, message: "Full name must be at least 2 characters" });
+    }
+
     const user = await prisma.user.update({
       where: { id: req.user!.id },
-      data: { fullName, phone },
+      data: {
+        ...(fullName !== undefined && { fullName: fullName.trim() }),
+        ...(phone !== undefined && { phone: phone.trim() || null }),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        role: true,
+        avatarUrl: true,
+      },
     });
-    return res.json({ success: true, message: "Profile updated", user: safeUser(user) });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: "Failed to update profile", error: err.message });
+
+    return res.status(200).json({ success: true, message: "Profile updated", user });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update profile" });
   }
 };
 
-export const uploadAvatar = async (req: AuthRequest, res: Response) => {
-  try {
-    const file = req.file as Express.Multer.File | undefined;
-    if (!file) return res.status(400).json({ success: false, message: "No file uploaded" });
-
-    const avatarUrl = `/uploads/avatars/${file.filename}`;
-    const user = await prisma.user.update({
-      where: { id: req.user!.id },
-      data: { avatarUrl },
-    });
-
-    return res.json({ success: true, message: "Avatar updated", user: safeUser(user) });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: "Failed to upload avatar", error: err.message });
-  }
-};
-
-// PATCH /api/auth/me/password
-// Body: { currentPassword, newPassword }
+// PATCH /api/auth/me/password  (protected)
 export const changePassword = async (req: AuthRequest, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
+
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ success: false, message: "currentPassword and newPassword are required" });
     }
-    if (newPassword.length < 8) {
+    if (String(newPassword).length < 8) {
       return res.status(400).json({ success: false, message: "New password must be at least 8 characters" });
     }
 
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
 
-    const valid = await comparePassword(currentPassword, user.password);
-    if (!valid) return res.status(401).json({ success: false, message: "Current password is incorrect" });
+    const isValid = await comparePassword(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: "Current password is incorrect" });
+    }
 
     const hashed = await hashPassword(newPassword);
-    await prisma.user.update({ where: { id: user.id }, data: { password: hashed } });
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { password: hashed },
+    });
 
-    return res.json({ success: true, message: "Password changed successfully" });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: "Failed to change password", error: err.message });
+    return res.status(200).json({ success: true, message: "Password updated" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update password" });
+  }
+};
+
+// POST /api/auth/me/avatar  (protected, multipart/form-data, field name "avatar")
+export const uploadAvatar = async (req: AuthRequest, res: Response) => {
+  try {
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
+      return res.status(400).json({ success: false, message: "No avatar file uploaded" });
+    }
+
+    const avatarUrl = `/uploads/avatars/${file.filename}`;
+
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { avatarUrl },
+      select: { id: true, fullName: true, email: true, phone: true, role: true, avatarUrl: true },
+    });
+
+    return res.status(200).json({ success: true, message: "Avatar updated", user });
+  } catch (error) {
+    console.error("Upload avatar error:", error);
+    return res.status(500).json({ success: false, message: "Failed to upload avatar" });
   }
 };
 
