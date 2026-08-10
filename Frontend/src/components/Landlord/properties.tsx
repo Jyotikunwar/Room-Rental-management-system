@@ -6,14 +6,27 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  MoreVertical,
+  Pencil,
+  Trash2,
   UploadCloud,
   Building2,
-  MapPin,
   Loader2,
 } from "lucide-react";
-import { api, getImageUrl, type Room, type User } from "../../services/api";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { api, type Room, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
+
+// Leaflet's default marker icon breaks under most bundlers (webpack/vite)
+// because it references image paths that don't resolve — point it at CDN
+// assets instead so the pin actually renders.
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
 interface LandlordPropertiesProps {
   user: User;
@@ -23,11 +36,13 @@ interface LandlordPropertiesProps {
 }
 
 const PAGE_SIZE = 3;
+const DEFAULT_CENTER: [number, number] = [27.7172, 85.324]; // Kathmandu — fallback when no coords yet
 
+// Vacant = blue, Occupied = green, Maintenance = red
 const STATUS_STYLE: Record<string, string> = {
-  AVAILABLE: "bg-red-50 text-red-600",
+  AVAILABLE: "bg-blue-50 text-blue-600",
   BOOKED: "bg-green-50 text-green-600",
-  UNDER_MAINTENANCE: "bg-blue-50 text-blue-600",
+  UNDER_MAINTENANCE: "bg-red-50 text-red-600",
 };
 const STATUS_LABEL: Record<string, string> = {
   AVAILABLE: "Vacant",
@@ -48,8 +63,9 @@ type PropertyForm = {
   title: string;
   roomType: Room["roomType"];
   price: string;
-  address: string;
-  mapLocation: string;
+  address: string; // free-text "Property Address" — parsed into location/city on submit
+  latitude: number | null;
+  longitude: number | null;
   amenities: string[];
   status: Room["status"];
 };
@@ -59,10 +75,61 @@ const EMPTY_FORM: PropertyForm = {
   roomType: "APARTMENT",
   price: "",
   address: "",
-  mapLocation: "",
+  latitude: null,
+  longitude: null,
   amenities: [],
   status: "AVAILABLE",
 };
+
+// Splits a combined "123 Sunset Blvd, Riverside" address into the
+// required location/city fields your Room schema expects. Not a real
+// geocoding split — just a pragmatic default until/unless you add
+// separate City/Location inputs.
+function splitAddress(address: string): { location: string; city: string } {
+  const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return { location: "", city: "" };
+  if (parts.length === 1) return { location: parts[0], city: parts[0] };
+  return { location: parts.slice(0, -1).join(", "), city: parts[parts.length - 1] };
+}
+
+function resolveImageUrl(url: string) {
+  const base = (api as any).UPLOAD_BASE_URL || "";
+  return url.startsWith("http") ? url : `${base}${url}`;
+}
+
+function LocationPicker({
+  lat,
+  lng,
+  onPick,
+}: {
+  lat: number | null;
+  lng: number | null;
+  onPick: (lat: number, lng: number) => void;
+}) {
+  function ClickHandler() {
+    useMapEvents({
+      click(e) {
+        onPick(e.latlng.lat, e.latlng.lng);
+      },
+    });
+    return null;
+  }
+
+  const center: [number, number] = lat != null && lng != null ? [lat, lng] : DEFAULT_CENTER;
+
+  return (
+    <div className="h-48 w-full overflow-hidden rounded-xl border border-gray-200">
+      <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {lat != null && lng != null && <Marker position={[lat, lng]} />}
+        <ClickHandler />
+      </MapContainer>
+    </div>
+  );
+}
 
 export default function LandlordProperties({ user, onLogout, activeRoute, onNavigate }: LandlordPropertiesProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -72,7 +139,6 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
   const [addressFilter, setAddressFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [page, setPage] = useState(1);
-  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
   const [editingRoomId, setEditingRoomId] = useState<number | "">("");
   const [editForm, setEditForm] = useState<PropertyForm>(EMPTY_FORM);
@@ -120,6 +186,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
   const totalPages = Math.max(1, Math.ceil(filteredRooms.length / PAGE_SIZE));
   const pagedRooms = filteredRooms.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  // ---------- Edit panel ----------
   function selectRoomToEdit(idStr: string) {
     if (!idStr) {
       setEditingRoomId("");
@@ -136,8 +203,9 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
       title: room.title,
       roomType: room.roomType,
       price: room.price.toString(),
-      address: room.location,
-      mapLocation: room.city,
+      address: (room as any).address || `${room.location}, ${room.city}`,
+      latitude: (room as any).latitude ?? null,
+      longitude: (room as any).longitude ?? null,
       amenities: (room.roomAmenities || []).map((ra) => ra.amenity.name),
       status: room.status,
     });
@@ -162,8 +230,8 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
     if (!editingRoomId) return;
     setEditError(null);
 
-    if (!editForm.title.trim() || !editForm.price.trim()) {
-      setEditError("Property name and rent are required.");
+    if (!editForm.title.trim() || !editForm.price.trim() || !editForm.address.trim()) {
+      setEditError("Property name, rent, and address are required.");
       return;
     }
     const priceNum = Number(editForm.price);
@@ -172,14 +240,19 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
       return;
     }
 
+    const { location, city } = splitAddress(editForm.address);
+
     setSavingEdit(true);
     try {
       const res = await api.updateRoom(editingRoomId, {
         title: editForm.title.trim(),
         roomType: editForm.roomType,
         price: priceNum,
-        location: editForm.address.trim(),
-        city: editForm.mapLocation.trim(),
+        location,
+        city,
+        address: editForm.address.trim(),
+        latitude: editForm.latitude ?? undefined,
+        longitude: editForm.longitude ?? undefined,
         amenities: editForm.amenities,
         status: editForm.status,
       });
@@ -202,6 +275,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
     }
   }
 
+  // ---------- Add panel ----------
   function toggleAmenity(name: string) {
     setForm((f) => ({
       ...f,
@@ -224,8 +298,8 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
     e.preventDefault();
     setFormError(null);
 
-    if (!form.title.trim() || !form.price.trim()) {
-      setFormError("Property name and rent are required.");
+    if (!form.title.trim() || !form.price.trim() || !form.address.trim()) {
+      setFormError("Property name, rent, and address are required.");
       return;
     }
     const priceNum = Number(form.price);
@@ -234,14 +308,19 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
       return;
     }
 
+    const { location, city } = splitAddress(form.address);
+
     setSubmitting(true);
     try {
       const res = await api.createRoom({
         title: form.title.trim(),
         roomType: form.roomType,
         price: priceNum,
-        location: form.address.trim(),
-        city: form.mapLocation.trim(),
+        location,
+        city,
+        address: form.address.trim(),
+        latitude: form.latitude ?? undefined,
+        longitude: form.longitude ?? undefined,
         amenities: form.amenities,
         status: form.status,
       });
@@ -273,14 +352,12 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
     } catch (e) {
       console.error("Failed to delete property:", e);
     }
-    setOpenMenuId(null);
   }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
       <LandlordSidebar active={activeRoute} onNavigate={onNavigate} onLogout={onLogout} user={user} />
       <div className="min-w-0 flex-1">
-        {/* Header — stacks on mobile, row on sm+ */}
         <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
           <div className="relative w-full sm:max-w-xs">
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -307,7 +384,6 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
           <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Properties</h1>
           <p className="mt-1 text-sm text-gray-500">Manage and monitor all your properties in one place.</p>
 
-          {/* Filter bar — wraps and scrolls horizontally if tight */}
           <div className="my-6 flex flex-wrap items-center gap-3">
             <FilterSelect
               value={typeFilter}
@@ -331,7 +407,6 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
             />
           </div>
 
-          {/* Property list — table on md+, stacked cards on mobile */}
           <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
             {loading ? (
               <p className="py-8 text-center text-sm text-gray-400">Loading properties...</p>
@@ -341,14 +416,12 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
               </p>
             ) : (
               <>
-                {/* Desktop/tablet table */}
                 <div className="hidden overflow-x-auto md:block">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                         <th className="pb-3 font-medium">Property Name</th>
                         <th className="pb-3 font-medium">Type</th>
-                        <th className="pb-3 font-medium">Images</th>
                         <th className="pb-3 font-medium">Status</th>
                         <th className="pb-3 font-medium">Rent / Month</th>
                         <th className="pb-3 font-medium text-right">Actions</th>
@@ -358,23 +431,21 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                       {pagedRooms.map((room) => (
                         <tr key={room.id} className="border-t border-gray-100">
                           <td className="py-3">
-                            <p className="font-medium text-gray-900">{room.title}</p>
-                            <p className="text-xs text-gray-400">{room.location}, {room.city}</p>
-                          </td>
-                          <td className="py-3 text-gray-700">{room.roomType.charAt(0) + room.roomType.slice(1).toLowerCase()}</td>
-                          <td className="py-3">
-                            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
-                              {room.roomImages?.[0]?.imageUrl ? (
-                                <img
-                                  src={getImageUrl(room.roomImages[0].imageUrl)}
-                                  alt=""
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <Building2 size={16} className="text-gray-400" />
-                              )}
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                                {room.roomImages?.[0]?.imageUrl ? (
+                                  <img src={resolveImageUrl(room.roomImages[0].imageUrl)} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <Building2 size={16} className="text-gray-400" />
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-900">{room.title}</p>
+                                <p className="text-xs text-gray-400">{room.location}, {room.city}</p>
+                              </div>
                             </div>
                           </td>
+                          <td className="py-3 text-gray-700">{room.roomType.charAt(0) + room.roomType.slice(1).toLowerCase()}</td>
                           <td className="py-3">
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[room.status]}`}>
                               {STATUS_LABEL[room.status]}
@@ -382,12 +453,22 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                           </td>
                           <td className="py-3 text-gray-700">Rs. {room.price.toLocaleString()}</td>
                           <td className="py-3 text-right">
-                            <RowMenu
-                              open={openMenuId === room.id}
-                              onToggle={() => setOpenMenuId(openMenuId === room.id ? null : room.id)}
-                              onEdit={() => { selectRoomToEdit(room.id.toString()); setOpenMenuId(null); }}
-                              onDelete={() => handleDelete(room.id)}
-                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => selectRoomToEdit(room.id.toString())}
+                                className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600"
+                                aria-label="Edit property"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(room.id)}
+                                className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600"
+                                aria-label="Delete property"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -395,18 +476,13 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                   </table>
                 </div>
 
-                {/* Mobile stacked cards */}
                 <div className="space-y-3 md:hidden">
                   {pagedRooms.map((room) => (
                     <div key={room.id} className="rounded-xl border border-gray-100 p-3">
                       <div className="flex items-start gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
                           {room.roomImages?.[0]?.imageUrl ? (
-                            <img
-                              src={getImageUrl(room.roomImages[0].imageUrl)}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
+                            <img src={resolveImageUrl(room.roomImages[0].imageUrl)} alt="" className="h-full w-full object-cover" />
                           ) : (
                             <Building2 size={18} className="text-gray-400" />
                           )}
@@ -417,12 +493,22 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                               <p className="truncate font-medium text-gray-900">{room.title}</p>
                               <p className="truncate text-xs text-gray-400">{room.location}, {room.city}</p>
                             </div>
-                            <RowMenu
-                              open={openMenuId === room.id}
-                              onToggle={() => setOpenMenuId(openMenuId === room.id ? null : room.id)}
-                              onEdit={() => { selectRoomToEdit(room.id.toString()); setOpenMenuId(null); }}
-                              onDelete={() => handleDelete(room.id)}
-                            />
+                            <div className="flex shrink-0 gap-2">
+                              <button
+                                onClick={() => selectRoomToEdit(room.id.toString())}
+                                className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600"
+                                aria-label="Edit property"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(room.id)}
+                                className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600"
+                                aria-label="Delete property"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                             <span className="text-gray-500">{room.roomType.charAt(0) + room.roomType.slice(1).toLowerCase()}</span>
@@ -510,7 +596,15 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Property Address</label>
+                    <input
+                      value={editForm.address}
+                      onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                      className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
+                    />
+                  </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">Property Status</label>
                     <select
@@ -523,25 +617,15 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                       <option value="UNDER_MAINTENANCE">Maintenance</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Property Address</label>
-                    <input
-                      value={editForm.address}
-                      onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
-                      className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Map Location</label>
-                    <div className="relative">
-                      <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input
-                        value={editForm.mapLocation}
-                        onChange={(e) => setEditForm((f) => ({ ...f, mapLocation: e.target.value }))}
-                        className="h-10 w-full rounded-lg border border-gray-200 pl-8 pr-3 text-sm outline-none focus:border-gray-900"
-                      />
-                    </div>
-                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-medium text-gray-600">Map Location — click the map to set the pin</label>
+                  <LocationPicker
+                    lat={editForm.latitude}
+                    lng={editForm.longitude}
+                    onPick={(lat, lng) => setEditForm((f) => ({ ...f, latitude: lat, longitude: lng }))}
+                  />
                 </div>
 
                 <div>
@@ -566,7 +650,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                   <div className="flex flex-wrap gap-3">
                     {(rooms.find((r) => r.id === editingRoomId)?.roomImages || []).map((img) => (
                       <div key={img.id} className="h-16 w-16 overflow-hidden rounded-lg border border-gray-200">
-                        <img src={getImageUrl(img.imageUrl)} alt="" className="h-full w-full object-cover" />
+                        <img src={resolveImageUrl(img.imageUrl)} alt="" className="h-full w-full object-cover" />
                       </div>
                     ))}
                     <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-gray-200 text-gray-400 hover:border-gray-400">
@@ -638,28 +722,23 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Property Address</label>
-                  <input
-                    value={form.address}
-                    onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                    placeholder="e.g. 123 Sunset Blvd, Riverside"
-                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Map Location</label>
-                  <div className="relative">
-                    <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      value={form.mapLocation}
-                      onChange={(e) => setForm((f) => ({ ...f, mapLocation: e.target.value }))}
-                      placeholder="Search location on map..."
-                      className="h-10 w-full rounded-lg border border-gray-200 pl-8 pr-3 text-sm outline-none focus:border-gray-900"
-                    />
-                  </div>
-                </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Property Address</label>
+                <input
+                  value={form.address}
+                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                  placeholder="e.g. 123 Sunset Blvd, Riverside"
+                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-medium text-gray-600">Map Location — click the map to set the pin</label>
+                <LocationPicker
+                  lat={form.latitude}
+                  lng={form.longitude}
+                  onPick={(lat, lng) => setForm((f) => ({ ...f, latitude: lat, longitude: lng }))}
+                />
               </div>
 
               <div>
@@ -729,22 +808,6 @@ function FilterSelect({ value, onChange, options }: { value: string; onChange: (
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <ChevronDown size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-    </div>
-  );
-}
-
-function RowMenu({ open, onToggle, onEdit, onDelete }: { open: boolean; onToggle: () => void; onEdit: () => void; onDelete: () => void }) {
-  return (
-    <div className="relative inline-block">
-      <button onClick={onToggle} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="More actions">
-        <MoreVertical size={16} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-8 z-10 w-32 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-          <button onClick={onEdit} className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">Edit</button>
-          <button onClick={onDelete} className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Delete</button>
-        </div>
-      )}
     </div>
   );
 }
