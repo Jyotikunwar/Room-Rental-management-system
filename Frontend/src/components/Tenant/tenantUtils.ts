@@ -1,5 +1,5 @@
 import type { Room } from "../../services/api";
-import { UPLOAD_BASE_URL } from "../../services/api";
+import { getImageUrl } from "../../services/api";
 
 const FALLBACK_IMAGES: Record<string, string> = {
   SINGLE: "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=600&q=80",
@@ -11,7 +11,7 @@ const FALLBACK_IMAGES: Record<string, string> = {
 export function getRoomImage(room?: Room | null): string {
   if (room?.roomImages?.length) {
     const primary = room.roomImages.find((img) => img.isPrimary) || room.roomImages[0];
-    return `${UPLOAD_BASE_URL}${primary.imageUrl}`;
+    return getImageUrl(primary.imageUrl) || FALLBACK_IMAGES[room?.roomType || "SINGLE"];
   }
   return FALLBACK_IMAGES[room?.roomType || "SINGLE"] || FALLBACK_IMAGES.SINGLE;
 }

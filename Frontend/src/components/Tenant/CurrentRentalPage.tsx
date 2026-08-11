@@ -5,7 +5,7 @@ import {
   AlertTriangle, X, Loader2, Search,
 } from "lucide-react";
 import type { User, Booking, Payment } from "../../services/api";
-import { api, UPLOAD_BASE_URL } from "../../services/api";
+import { api, getImageUrl } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
@@ -24,8 +24,8 @@ function daysUntil(iso: string) {
 }
 
 function roomImages(booking: Booking): string[] {
-  const imgs = booking.room?.roomImages?.map((i) => `${UPLOAD_BASE_URL}${i.imageUrl}`) ?? [];
-  return imgs.length > 0 ? imgs : ["/images/rooms/placeholder.jpg"];
+  const imgs = booking.room?.roomImages?.map((i) => getImageUrl(i.imageUrl) || "") ?? [];
+  return imgs.filter(Boolean).length > 0 ? imgs.filter(Boolean) : ["/images/rooms/placeholder.jpg"];
 }
 
 export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRentalProps) {

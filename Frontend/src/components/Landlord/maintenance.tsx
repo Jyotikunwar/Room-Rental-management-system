@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Wrench, Clock, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ChevronDown, Wrench, Clock, Loader2, CheckCircle2 } from "lucide-react";
 import { api, type MaintenanceRequest, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 
@@ -21,12 +21,7 @@ const STATUS_STYLE: Record<string, string> = {
   RESOLVED: "bg-green-50 text-green-600",
   REJECTED: "bg-gray-100 text-gray-500",
 };
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: "Pending",
-  IN_PROGRESS: "In Progress",
-  RESOLVED: "Resolved",
-  REJECTED: "Rejected",
-};
+
 
 export default function LandlordMaintenance({ user, onLogout, activeRoute, onNavigate }: LandlordMaintenanceProps) {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);

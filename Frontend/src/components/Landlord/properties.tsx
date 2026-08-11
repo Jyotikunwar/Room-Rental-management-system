@@ -15,7 +15,7 @@ import {
 import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { api, type Room, type User } from "../../services/api";
+import { api, getImageUrl, type Room, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 
 // Leaflet's default marker icon breaks under most bundlers (webpack/vite)
@@ -93,8 +93,7 @@ function splitAddress(address: string): { location: string; city: string } {
 }
 
 function resolveImageUrl(url: string) {
-  const base = (api as any).UPLOAD_BASE_URL || "";
-  return url.startsWith("http") ? url : `${base}${url}`;
+  return getImageUrl(url) || "";
 }
 
 function LocationPicker({

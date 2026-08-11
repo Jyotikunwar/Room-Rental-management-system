@@ -2,7 +2,14 @@ import { Response } from "express";
 import prisma from "../lib/prisma";
 import { createRoomSchema, updateRoomSchema } from "../validations/room.validation";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { getSimilarRoomRecommendations } from "../services/recommendation.service";
+import {
+  getSimilarRoomRecommendations,
+  roomToVector,
+  preferencesToVector,
+  calculateCosineSimilarity,
+  calculatePopularityScore,
+} from "../services/recommendation.service";
+import { calculateHaversineDistance } from "../utils/haversine";
 
 // Resolves a list of amenity NAMES (e.g. "WiFi", "Parking") to Amenity row
 // ids, creating any that don't exist yet. Frontend sends names, not ids.
@@ -58,11 +65,7 @@ export const createRoom = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// GET /rooms  (public - Multi-Criteria Search & Filtering)
-// status=ALL means "don't filter by status at all" (used by the admin
-// properties list, which needs AVAILABLE/BOOKED/UNDER_MAINTENANCE together).
-// This was the bug: "ALL" was being passed straight to Prisma as if it were
-// a real RoomStatus enum value, which crashed with a validation error.
+// GET /rooms  (public - Multi-Criteria Search, Haversine Distance & Vector Cosine Match)
 export const getRooms = async (req: AuthRequest, res: Response) => {
   try {
     const {
@@ -75,10 +78,19 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
       search,
       amenities,
       wifi,
-      parking,
-      water,
-      balcony,
       kitchen,
+      furnished,
+      balcony,
+      water,
+      airConditioner,
+      parking,
+      attachedBathroom,
+      electricity,
+      fullyFurnished,
+      petFriendly,
+      userLat,
+      userLng,
+      maxDistance,
       sortBy,
     } = req.query;
 
@@ -88,10 +100,16 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
       requestedAmenities.push(...list);
     }
     if (wifi === "true") requestedAmenities.push("wifi");
-    if (parking === "true") requestedAmenities.push("parking");
-    if (water === "true") requestedAmenities.push("water");
-    if (balcony === "true") requestedAmenities.push("balcony");
     if (kitchen === "true") requestedAmenities.push("kitchen");
+    if (furnished === "true") requestedAmenities.push("furnished");
+    if (balcony === "true") requestedAmenities.push("balcony");
+    if (water === "true") requestedAmenities.push("water");
+    if (airConditioner === "true") requestedAmenities.push("air conditioner");
+    if (parking === "true") requestedAmenities.push("parking");
+    if (attachedBathroom === "true") requestedAmenities.push("attached bathroom");
+    if (electricity === "true") requestedAmenities.push("electricity");
+    if (fullyFurnished === "true") requestedAmenities.push("fully furnished");
+    if (petFriendly === "true") requestedAmenities.push("pet friendly");
 
     const amenityFilters = requestedAmenities.map((amenityName) => ({
       roomAmenities: {
@@ -108,8 +126,6 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
     if (sortBy === "price_desc") orderBy = { price: "desc" };
     if (sortBy === "oldest") orderBy = { createdAt: "asc" };
 
-    // Build the status condition separately so "ALL" can mean "omit this
-    // filter entirely" instead of being sent to Prisma as a literal value.
     const statusCondition =
       status === "ALL"
         ? []
@@ -117,10 +133,10 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
         ? [{ status: status as any }]
         : [{ status: "AVAILABLE" as const }];
 
-    const rooms = await prisma.room.findMany({
+    let rawRooms = await prisma.room.findMany({
       where: {
         AND: [
-          ...(city ? [{ city: { equals: String(city) } }] : []),
+          ...(city ? [{ city: { equals: String(city), mode: "insensitive" as const } }] : []),
           ...(location ? [{ location: { contains: String(location), mode: "insensitive" as const } }] : []),
           ...(roomType ? [{ roomType: roomType as any }] : []),
           ...statusCondition,
@@ -152,12 +168,82 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
       include: {
         roomImages: true,
         roomAmenities: { include: { amenity: true } },
-        landlord: { select: { id: true, fullName: true, phone: true } },
+        reviews: true,
+        favorites: true,
+        landlord: { select: { id: true, fullName: true, phone: true, email: true } },
       },
       orderBy,
     });
 
-    return res.status(200).json({ success: true, count: rooms.length, rooms });
+    const uLat = userLat ? Number(userLat) : undefined;
+    const uLng = userLng ? Number(userLng) : undefined;
+    const maxDist = maxDistance ? Number(maxDistance) : undefined;
+
+    // Vector for preference calculation
+    const maxRoomPrice = Math.max(...rawRooms.map((r) => r.price), 50000);
+    const prefVector = preferencesToVector(
+      {
+        preferredPrice: maxPrice ? Number(maxPrice) : minPrice ? Number(minPrice) : undefined,
+        preferredRoomType: roomType ? String(roomType) : undefined,
+        preferredAmenities: requestedAmenities,
+        city: city ? String(city) : undefined,
+      },
+      maxRoomPrice
+    );
+
+    const hasExplicitPrefs =
+      minPrice !== undefined ||
+      maxPrice !== undefined ||
+      roomType !== undefined ||
+      requestedAmenities.length > 0;
+
+    let processedRooms = rawRooms.map((room) => {
+      // 1. Haversine distance calculation
+      const distance = calculateHaversineDistance(uLat, uLng, room.latitude, room.longitude);
+
+      // 2. Cosine Similarity & Popularity Score
+      const rVector = roomToVector(room as any, maxRoomPrice);
+      const cosineSimilarity = hasExplicitPrefs
+        ? calculateCosineSimilarity(prefVector, rVector)
+        : 0;
+      const popularityScore = calculatePopularityScore(room as any);
+
+      const finalScore = hasExplicitPrefs
+        ? 0.7 * cosineSimilarity + 0.3 * popularityScore
+        : popularityScore;
+
+      return {
+        ...room,
+        distance,
+        similarityScore: Math.round(cosineSimilarity * 100) / 100,
+        popularityScore: Math.round(popularityScore * 100) / 100,
+        finalScore: Math.round(finalScore * 100) / 100,
+      };
+    });
+
+    // Distance Radius Filter
+    if (maxDist !== undefined && !isNaN(maxDist) && uLat !== undefined && uLng !== undefined) {
+      processedRooms = processedRooms.filter(
+        (r) => r.distance === null || r.distance <= maxDist
+      );
+    }
+
+    // Dynamic sorting overrides
+    if (sortBy === "distance" && uLat !== undefined && uLng !== undefined) {
+      processedRooms.sort((a, b) => {
+        if (a.distance === null) return 1;
+        if (b.distance === null) return -1;
+        return a.distance - b.distance;
+      });
+    } else if (sortBy === "match" || sortBy === "cosine") {
+      processedRooms.sort((a, b) => b.similarityScore - a.similarityScore);
+    } else if (sortBy === "popularity") {
+      processedRooms.sort((a, b) => b.popularityScore - a.popularityScore);
+    } else if (sortBy === "recommended") {
+      processedRooms.sort((a, b) => b.finalScore - a.finalScore);
+    }
+
+    return res.status(200).json({ success: true, count: processedRooms.length, rooms: processedRooms });
   } catch (error) {
     console.error("Get rooms error:", error);
     return res.status(500).json({ success: false, message: "Something went wrong" });

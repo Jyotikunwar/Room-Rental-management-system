@@ -1,15 +1,18 @@
 import prisma from "../lib/prisma";
 
-// Standard set of amenities to track for vectorization
+// Standard set of amenities to track for vectorization according to database
 const STANDARD_AMENITIES = [
   "wifi",
-  "parking",
-  "water",
-  "balcony",
   "kitchen",
-  "attached bathroom",
-  "air conditioner",
   "furnished",
+  "balcony",
+  "water",
+  "air conditioner",
+  "parking",
+  "attached bathroom",
+  "electricity",
+  "fully furnished",
+  "pet friendly",
 ];
 
 export interface RoomWithRelations {
@@ -157,3 +160,87 @@ export const getSimilarRoomRecommendations = async (targetRoomId: number, limit:
 
   return scoredRooms.slice(0, limit);
 };
+
+/**
+ * 5. Personalized Recommendation Engine based on explicit Tenant Preferences
+ * Compares tenant preference vector (price, room type, requested amenities) against available rooms.
+ */
+export interface TenantPreferences {
+  preferredPrice?: number;
+  preferredRoomType?: string;
+  preferredAmenities?: string[];
+  city?: string;
+}
+
+export function preferencesToVector(
+  prefs: TenantPreferences,
+  maxPrice: number = 50000
+): number[] {
+  const price = prefs.preferredPrice ? Math.min(prefs.preferredPrice / maxPrice, 1.0) : 0.5;
+  const isSingle = prefs.preferredRoomType === "SINGLE" ? 1 : 0;
+  const isDouble = prefs.preferredRoomType === "DOUBLE" ? 1 : 0;
+  const isFlat = prefs.preferredRoomType === "FLAT" ? 1 : 0;
+  const isApartment = prefs.preferredRoomType === "APARTMENT" ? 1 : 0;
+
+  const prefAmenities = (prefs.preferredAmenities || []).map((a) => a.toLowerCase());
+  const amenityVector = STANDARD_AMENITIES.map((amenity) =>
+    prefAmenities.some((name) => name.includes(amenity)) ? 1 : 0
+  );
+
+  return [price, isSingle, isDouble, isFlat, isApartment, ...amenityVector];
+}
+
+export const getPersonalizedRecommendations = async (
+  prefs: TenantPreferences,
+  limit: number = 10
+) => {
+  const rooms = await prisma.room.findMany({
+    where: {
+      status: "AVAILABLE",
+      ...(prefs.city ? { city: { equals: prefs.city, mode: "insensitive" } } : {}),
+    },
+    include: {
+      roomImages: true,
+      roomAmenities: { include: { amenity: true } },
+      reviews: true,
+      favorites: true,
+      landlord: { select: { id: true, fullName: true, phone: true } },
+    },
+  });
+
+  if (rooms.length === 0) return [];
+
+  const maxPrice = Math.max(...rooms.map((r) => r.price), 50000);
+  const prefVector = preferencesToVector(prefs, maxPrice);
+
+  const hasExplicitPrefs =
+    prefs.preferredPrice !== undefined ||
+    prefs.preferredRoomType !== undefined ||
+    (prefs.preferredAmenities && prefs.preferredAmenities.length > 0);
+
+  const scoredRooms = rooms.map((room) => {
+    const rVector = roomToVector(room, maxPrice);
+    const cosineSimilarity = hasExplicitPrefs
+      ? calculateCosineSimilarity(prefVector, rVector)
+      : 0;
+    const popularityScore = calculatePopularityScore(room);
+
+    // If tenant provided preferences, weight Cosine Similarity higher (70% Cosine, 30% Popularity).
+    // If new user / no preferences, weight Popularity 100%.
+    const finalScore = hasExplicitPrefs
+      ? 0.7 * cosineSimilarity + 0.3 * popularityScore
+      : popularityScore;
+
+    return {
+      room,
+      similarityScore: Math.round(cosineSimilarity * 100) / 100,
+      popularityScore: Math.round(popularityScore * 100) / 100,
+      finalScore: Math.round(finalScore * 100) / 100,
+    };
+  });
+
+  scoredRooms.sort((a, b) => b.finalScore - a.finalScore);
+
+  return scoredRooms.slice(0, limit);
+};
+

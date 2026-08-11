@@ -115,7 +115,7 @@ export default function AdminMaintenance({ onLogout, activeRoute, onNavigate, on
   const stats = useMemo(() => {
     return {
       total: requests.length,
-      pending: requests.filter((r) => r.status === "OPEN").length,
+      pending: requests.filter((r) => r.status === "PENDING").length,
       inProgress: requests.filter((r) => r.status === "IN_PROGRESS").length,
       completed: requests.filter((r) => r.status === "RESOLVED").length,
     };

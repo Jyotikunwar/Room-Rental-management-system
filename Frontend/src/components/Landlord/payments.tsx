@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, ChevronDown, ChevronLeft, ChevronRight, Download, Wallet, TrendingUp, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { Search, ChevronDown, ChevronLeft, ChevronRight, Download, Wallet, TrendingUp, Clock, AlertTriangle } from "lucide-react";
 import { api, type RentInvoice, type LandlordInvoiceStats, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, Bell, Plus, Phone, User as UserIcon, MoreVertical,
-  Paperclip, Smile, Send, Building2, Wrench, Wallet, Loader2, ChevronLeft,
+  Paperclip, Smile, Send, Building2, Loader2, ChevronLeft,
 } from "lucide-react";
 import type { User, ConversationSummary, ChatMessage } from "../../services/api";
 import { api } from "../../services/api";

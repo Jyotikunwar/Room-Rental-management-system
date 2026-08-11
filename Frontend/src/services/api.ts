@@ -67,6 +67,10 @@ export interface Room {
   address?: string;
   latitude?: number;
   longitude?: number;
+  distance?: number | null;
+  similarityScore?: number;
+  popularityScore?: number;
+  finalScore?: number;
   roomType: "SINGLE" | "DOUBLE" | "FLAT" | "APARTMENT";
   price: number;
   securityDeposit?: number;
@@ -254,6 +258,8 @@ export interface MaintenanceRequest {
   status: "PENDING" | "IN_PROGRESS" | "RESOLVED" | "REJECTED";
   createdAt: string;
   updatedAt?: string;
+  room?: { id: number; title: string; city: string; location: string };
+  assignedTo?: { id: number; fullName: string };
   booking?: {
     room?: { id: number; title: string; city: string; location: string };
   };

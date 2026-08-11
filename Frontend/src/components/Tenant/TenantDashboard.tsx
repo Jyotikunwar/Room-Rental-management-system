@@ -5,7 +5,7 @@ import {
   AlertTriangle, UserPlus2, MessageCircle, Loader2, ImageOff, X,
 } from "lucide-react";
 import type { User, DashboardStats, Booking, Favorite, Notification, RecommendationResult, Room } from "../../services/api";
-import { api, UPLOAD_BASE_URL } from "../../services/api";
+import { api, getImageUrl } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
@@ -86,7 +86,7 @@ function timeAgo(dateStr: string): string {
 // colored background. No external image service involved.
 function RoomThumb({ imageUrl, className }: { imageUrl?: string; className?: string }) {
   if (imageUrl) {
-    return <img src={`${UPLOAD_BASE_URL}${imageUrl}`} alt="" className={`object-cover ${className}`} />;
+    return <img src={getImageUrl(imageUrl)} alt="" className={`object-cover ${className}`} />;
   }
   return (
     <div className={`flex items-center justify-center bg-stone-100 text-stone-300 ${className}`}>

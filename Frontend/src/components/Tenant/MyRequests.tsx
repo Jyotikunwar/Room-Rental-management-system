@@ -3,7 +3,7 @@ import {
   Search, Bell, MapPin, ChevronDown, User as UserIcon, Loader2, X,
 } from "lucide-react";
 import type { User, Booking, Room } from "../../services/api";
-import { api, UPLOAD_BASE_URL } from "../../services/api";
+import { api, getImageUrl } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
@@ -55,7 +55,7 @@ function formatDate(iso: string) {
 
 function roomImage(room?: Room) {
   const url = room?.roomImages?.[0]?.imageUrl;
-  return url ? `${UPLOAD_BASE_URL}${url}` : "/images/rooms/placeholder.jpg";
+  return url ? getImageUrl(url) || "/images/rooms/placeholder.jpg" : "/images/rooms/placeholder.jpg";
 }
 
 export default function MyRequests({ user, onLogout, onNavigate }: MyRequestsProps) {

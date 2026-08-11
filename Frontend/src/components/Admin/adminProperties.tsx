@@ -3,7 +3,7 @@ import {
   Search, Bell, LayoutGrid, List, MapPin, Pencil, Eye, Trash2,
   Loader2, X, Building2,
 } from "lucide-react";
-import { api, UPLOAD_BASE_URL, type User, type Room } from "../../services/api";
+import { api, getImageUrl, type User, type Room } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
 
 interface AdminPropertiesProps {
@@ -21,10 +21,10 @@ const STATUS_STYLE: Record<string, string> = {
 
 function roomThumb(room: Room) {
   const url = room.roomImages?.[0]?.imageUrl;
-  return url ? `${UPLOAD_BASE_URL}${url}` : null;
+  return url ? getImageUrl(url) : null;
 }
 
-export default function AdminProperties({ onLogout, activeRoute, onNavigate }: Omit<AdminPropertiesProps, 'user'>) {
+export default function AdminProperties({ onLogout, activeRoute, onNavigate }: AdminPropertiesProps) {
   const [rooms, setRooms] = useState<Room[] | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"grid" | "list">("list");

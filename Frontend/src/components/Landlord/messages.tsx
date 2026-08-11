@@ -19,7 +19,7 @@ interface Thread {
   lastMessage: Inquiry;
 }
 
-export default function LandlordMessages({ user, onLogout, activeRoute, onNavigate }: LandlordMessagesProps) {
+export default function LandlordMessages({ onLogout, activeRoute, onNavigate }: LandlordMessagesProps) {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Camera, Loader2, Check } from "lucide-react";
+import { Loader2, Check } from "lucide-react";
 import { api, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 

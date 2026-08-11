@@ -5,13 +5,16 @@ const prisma = new PrismaClient();
 
 const STANDARD_AMENITY_NAMES = [
   "WiFi",
-  "Parking",
-  "Water",
-  "Balcony",
   "Kitchen",
-  "Attached Bathroom",
-  "Air Conditioner",
   "Furnished",
+  "Balcony",
+  "Water",
+  "Air Conditioner",
+  "Parking",
+  "Attached Bathroom",
+  "Electricity",
+  "Fully Furnished",
+  "Pet Friendly",
 ];
 
 const CITIES = ["Kathmandu", "Lalitpur", "Bhaktapur", "Pokhara"];
@@ -22,6 +25,34 @@ const LOCATIONS: Record<string, string[]> = {
   Pokhara: ["Lakeside", "Birauta", "Mahendrapool"],
 };
 
+const LOCATION_COORDS: Record<string, { lat: number; lng: number }> = {
+  Baneshwor: { lat: 27.6938, lng: 85.3331 },
+  Kirtipur: { lat: 27.6792, lng: 85.2754 },
+  Thamel: { lat: 27.7154, lng: 85.3123 },
+  Chabahil: { lat: 27.7167, lng: 85.3472 },
+  Kalanki: { lat: 27.6936, lng: 85.2813 },
+  Patan: { lat: 27.6738, lng: 85.3168 },
+  Jawalakhel: { lat: 27.6728, lng: 85.3148 },
+  Kupondole: { lat: 27.6861, lng: 85.3135 },
+  Satdobato: { lat: 27.6548, lng: 85.3248 },
+  Suryabinayak: { lat: 27.6631, lng: 85.4294 },
+  Thimi: { lat: 27.6789, lng: 85.3789 },
+  "Durbar Square": { lat: 27.6722, lng: 85.4284 },
+  Lakeside: { lat: 28.2096, lng: 83.9575 },
+  Birauta: { lat: 28.1882, lng: 83.9712 },
+  Mahendrapool: { lat: 28.2215, lng: 83.9874 },
+};
+
+const ROOM_IMAGES = [
+  "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1598928506311-c55ded91a20c?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=800&q=80",
+  "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80",
+];
+
 const ROOM_TYPES: RoomType[] = ["SINGLE", "DOUBLE", "FLAT", "APARTMENT"];
 
 async function main() {
@@ -30,6 +61,8 @@ async function main() {
   // 1. Clear existing seedable records in correct dependency order
   console.log("🧹 Cleaning old data...");
 
+  await prisma.payment.deleteMany({});
+  await prisma.paymentMethod.deleteMany({});
   await prisma.review.deleteMany({});
   await prisma.favorite.deleteMany({});
   await prisma.message.deleteMany({});
@@ -107,25 +140,34 @@ async function main() {
   });
 
   // 4. Seed Hand-crafted Controlled Rooms (for Viva Demo)
-  console.log("🏠 Seeding Handcrafted Controlled Rooms for Viva Demonstration...");
+  console.log("🏠 Seeding Handcrafted Controlled Rooms with Images & Coordinates...");
 
   // Controlled Room A (Reference)
   const roomA = await prisma.room.create({
     data: {
       landlordId: landlord1.id,
       title: "Shanti Niwas, Baneshwor",
-      description: "Bright single studio room with high-speed WiFi, parking, and full furniture.",
+      description: "Bright single studio room with high-speed WiFi, parking, water supply, and full furniture.",
       city: "Kathmandu",
       location: "Baneshwor",
+      latitude: LOCATION_COORDS["Baneshwor"].lat,
+      longitude: LOCATION_COORDS["Baneshwor"].lng,
       roomType: RoomType.SINGLE,
       price: 8500,
       status: RoomStatus.AVAILABLE,
+      roomImages: {
+        create: [
+          { imageUrl: ROOM_IMAGES[0], isPrimary: true },
+          { imageUrl: ROOM_IMAGES[1], isPrimary: false },
+        ],
+      },
       roomAmenities: {
         create: [
           { amenityId: amenityMap.get("WiFi")! },
           { amenityId: amenityMap.get("Parking")! },
           { amenityId: amenityMap.get("Furnished")! },
           { amenityId: amenityMap.get("Water")! },
+          { amenityId: amenityMap.get("Attached Bathroom")! },
         ],
       },
     },
@@ -139,9 +181,17 @@ async function main() {
       description: "Comfortable single room near Baneshwor plaza. Includes WiFi, parking, and furnished setup.",
       city: "Kathmandu",
       location: "Baneshwor",
+      latitude: LOCATION_COORDS["Baneshwor"].lat + 0.002,
+      longitude: LOCATION_COORDS["Baneshwor"].lng + 0.001,
       roomType: RoomType.SINGLE,
       price: 12500,
       status: RoomStatus.AVAILABLE,
+      roomImages: {
+        create: [
+          { imageUrl: ROOM_IMAGES[1], isPrimary: true },
+          { imageUrl: ROOM_IMAGES[2], isPrimary: false },
+        ],
+      },
       roomAmenities: {
         create: [
           { amenityId: amenityMap.get("WiFi")! },
@@ -153,7 +203,7 @@ async function main() {
     },
   });
 
-  // Controlled Room C (Deliberately Opposite to Room A)
+  // Controlled Room C (Penthouse Apartment)
   const roomC = await prisma.room.create({
     data: {
       landlordId: landlord2.id,
@@ -161,45 +211,67 @@ async function main() {
       description: "Spacious penthouse luxury apartment with private balcony and air conditioning.",
       city: "Pokhara",
       location: "Lakeside",
+      latitude: LOCATION_COORDS["Lakeside"].lat,
+      longitude: LOCATION_COORDS["Lakeside"].lng,
       roomType: RoomType.APARTMENT,
       price: 45000,
       status: RoomStatus.AVAILABLE,
+      roomImages: {
+        create: [
+          { imageUrl: ROOM_IMAGES[3], isPrimary: true },
+          { imageUrl: ROOM_IMAGES[4], isPrimary: false },
+        ],
+      },
       roomAmenities: {
         create: [
           { amenityId: amenityMap.get("Air Conditioner")! },
           { amenityId: amenityMap.get("Balcony")! },
+          { amenityId: amenityMap.get("Fully Furnished")! },
+          { amenityId: amenityMap.get("Pet Friendly")! },
         ],
       },
     },
   });
 
-  // 5. Seed 25 Randomized Realistic Rooms across Cities
-  console.log("🏢 Seeding 25 Additional Realistic Rooms across Nepal Cities...");
+  // 5. Seed 25 Randomized Realistic Rooms across Nepal Cities
+  console.log("🏢 Seeding 25 Additional Realistic Rooms with Images across Nepal Cities...");
   const landlords = [landlord1, landlord2];
 
   for (let i = 1; i <= 25; i++) {
     const city = CITIES[i % CITIES.length];
     const locList = LOCATIONS[city];
     const location = locList[i % locList.length];
+    const coords = LOCATION_COORDS[location] || { lat: 27.7172, lng: 85.3240 };
     const roomType = ROOM_TYPES[i % ROOM_TYPES.length];
     const landlord = landlords[i % landlords.length];
     const price = Math.floor(Math.random() * 20000) + 6000;
 
-    // Pick 3-5 random amenities
+    const mainImg = ROOM_IMAGES[i % ROOM_IMAGES.length];
+    const secImg = ROOM_IMAGES[(i + 1) % ROOM_IMAGES.length];
+
+    // Pick 3-6 random amenities
     const amenityIdsToInclude = createdAmenities
-      .filter((_, idx) => (i + idx) % 2 === 0 || idx === i % 8)
+      .filter((_, idx) => (i + idx) % 2 === 0 || idx === i % 11)
       .map((a) => a.id);
 
     await prisma.room.create({
       data: {
         landlordId: landlord.id,
         title: `${roomType.charAt(0) + roomType.slice(1).toLowerCase()} Room #${i} in ${location}`,
-        description: `Clean and well-maintained ${roomType.toLowerCase()} rental located in ${location}, ${city}.`,
+        description: `Clean and well-maintained ${roomType.toLowerCase()} rental located in ${location}, ${city}. Features modern amenities and peaceful surrounding.`,
         city,
         location,
+        latitude: coords.lat + (i * 0.001 - 0.01),
+        longitude: coords.lng + (i * 0.001 - 0.01),
         roomType,
         price,
         status: RoomStatus.AVAILABLE,
+        roomImages: {
+          create: [
+            { imageUrl: mainImg, isPrimary: true },
+            { imageUrl: secImg, isPrimary: false },
+          ],
+        },
         roomAmenities: {
           create: amenityIdsToInclude.map((amenityId) => ({ amenityId })),
         },
@@ -260,11 +332,21 @@ async function main() {
     data: { status: RoomStatus.BOOKED },
   });
 
+  const defaultPaymentMethod = await prisma.paymentMethod.create({
+    data: {
+      userId: tenant1.id,
+      type: "ESEWA",
+      label: "eSewa Wallet",
+      detail: "9813333333",
+      isDefault: true,
+    },
+  });
+
   await prisma.payment.create({
     data: {
       bookingId: approvedBooking.id,
       amount: roomA.price,
-      paymentMethod: "ESEWA",
+      paymentMethodId: defaultPaymentMethod.id,
       status: "PENDING",
     },
   });
@@ -312,7 +394,7 @@ async function main() {
     },
   });
 
-  console.log("✅ SEEDING COMPLETE! Database ready with realistic dataset & viva demo rooms.");
+  console.log("✅ SEEDING COMPLETE! Database ready with realistic images & coordinates.");
 }
 
 main()

@@ -15,6 +15,9 @@ interface FindPropertyProps {
   onNavigate: (view: TenantView) => void;
 }
 
+import { LocationSelector } from "../Common/LocationSelector";
+import { getUserLocation, type UserCoordinates } from "../../utils/haversine";
+
 // Backend enum -> filter chip label
 const ROOM_TYPES: { value: Room["roomType"]; label: string }[] = [
   { value: "SINGLE", label: "Single Room" },
@@ -23,7 +26,19 @@ const ROOM_TYPES: { value: Room["roomType"]; label: string }[] = [
   { value: "APARTMENT", label: "Apartment" },
 ];
 
-const AMENITY_OPTIONS = ["WiFi", "Parking", "Water Supply", "Attached Bathroom", "Kitchen", "Laundry", "Pet Friendly"];
+const AMENITY_OPTIONS = [
+  "WiFi",
+  "Kitchen",
+  "Furnished",
+  "Balcony",
+  "Water",
+  "Air Conditioner",
+  "Parking",
+  "Attached Bathroom",
+  "Electricity",
+  "Fully Furnished",
+  "Pet Friendly",
+];
 const QUICK_FILTERS = ["WiFi", "Parking"];
 const PRICE_MIN = 2000;
 const PRICE_MAX = 50000;
@@ -78,7 +93,9 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   // Multi-select: user can pick one OR more landmarks (School, Hospital, Main Road...)
   const [landmarks, setLandmarks] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [sort, setSort] = useState<"newest" | "price">("newest");
+  const [sort, setSort] = useState<string>("recommended");
+  const [maxDistance, setMaxDistance] = useState<number>(50);
+  const [userLoc, setUserLoc] = useState<UserCoordinates | null>(getUserLocation());
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [mapMode, setMapMode] = useState<"map" | "satellite">("map");
@@ -97,7 +114,22 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([api.getRooms({ status: "AVAILABLE" }), api.getFavorites()])
+
+    const queryParams: Record<string, any> = {
+      status: "AVAILABLE",
+      userLat: userLoc?.latitude,
+      userLng: userLoc?.longitude,
+      maxDistance,
+      sortBy: sort,
+    };
+
+    if (query) queryParams.search = query;
+    if (roomType !== "All") queryParams.roomType = roomType;
+    if (minPrice > PRICE_MIN) queryParams.minPrice = minPrice;
+    if (maxPrice < PRICE_MAX) queryParams.maxPrice = maxPrice;
+    if (amenities.size > 0) queryParams.amenities = Array.from(amenities).join(",");
+
+    Promise.all([api.getRooms(queryParams), api.getFavorites()])
       .then(([roomsRes, favRes]) => {
         if (cancelled) return;
         if (roomsRes && roomsRes.success === false) {
@@ -114,7 +146,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userLoc, sort, maxDistance, query, roomType, minPrice, maxPrice, amenities]);
 
   const toggleAmenity = (a: string) =>
     setAmenities((prev) => {
@@ -285,6 +317,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
               className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-stone-400"
             />
           </div>
+          <LocationSelector onLocationChange={(loc) => setUserLoc(loc)} />
           <button onClick={() => onNavigate("notifications")} className="relative shrink-0 text-stone-500 hover:text-stone-700">
             <Bell size={18} />
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500" />
@@ -421,6 +454,22 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                 </div>
               </div>
 
+              <div className="mb-5">
+                <p className="mb-1 text-xs font-medium text-stone-500">Max Distance Radius (Haversine)</p>
+                <div className="flex items-center justify-between text-xs text-stone-600 mb-1">
+                  <span>Within {maxDistance} km</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={maxDistance}
+                  onChange={(e) => setMaxDistance(Number(e.target.value))}
+                  className="w-full accent-blue-600"
+                />
+              </div>
+
               <div className="mb-4 lg:mb-0">
                 <p className="mb-2 text-xs font-medium text-stone-500">Near Landmark (select one or more)</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -482,16 +531,46 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                 <div className="mb-3 -mx-3 flex items-center gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <span className="shrink-0 text-xs text-stone-400">Sort by:</span>
                   <button
+                    onClick={() => setSort("recommended")}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "recommended" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+                  >
+                    ✨ Recommended (Cosine)
+                  </button>
+                  <button
+                    onClick={() => setSort("match")}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "match" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+                  >
+                    ⚡ Cosine Match
+                  </button>
+                  <button
+                    onClick={() => setSort("popularity")}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "popularity" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+                  >
+                    🔥 Popularity Ranked
+                  </button>
+                  <button
+                    onClick={() => setSort("distance")}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "distance" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+                  >
+                    📍 Nearest (Haversine)
+                  </button>
+                  <button
+                    onClick={() => setSort("price_asc")}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "price_asc" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+                  >
+                    Price: Low to High
+                  </button>
+                  <button
+                    onClick={() => setSort("price_desc")}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "price_desc" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+                  >
+                    Price: High to Low
+                  </button>
+                  <button
                     onClick={() => setSort("newest")}
                     className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "newest" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
                   >
                     Newest
-                  </button>
-                  <button
-                    onClick={() => setSort("price")}
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "price" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
-                  >
-                    Price: Low to High
                   </button>
                   <span className="mx-1 h-4 w-px shrink-0 bg-stone-200" />
                   {QUICK_FILTERS.map((q) => (
