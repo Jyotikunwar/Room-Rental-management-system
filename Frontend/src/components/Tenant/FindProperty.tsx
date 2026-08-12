@@ -3,14 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search, Bell, Heart, Plus, Minus, LocateFixed,
   Grid2x2, List as ListIcon, MapPin, Star, X,
-  SlidersHorizontal, Map as MapIcon, Loader2,
+  SlidersHorizontal, Map as MapIcon, Loader2, Sparkles,
 } from "lucide-react";
-import type { User, Room } from "../../services/api";
+import type { User, Room, RecommendationResult } from "../../services/api";
 import { api } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
-import { resolveImageUrl, avgRating } from "./roomDisplayUtils";
+import { resolveImageUrl, avgRating, formatMatchPercent } from "./roomDisplayUtils";
 import RoomDetailsModal from "./RoomDetailsModal";
 import BookingModal from "./BookingModal";
 
@@ -21,7 +21,7 @@ interface FindPropertyProps {
 }
 
 import { LocationSelector } from "../Common/LocationSelector";
-import { getUserLocation, type UserCoordinates } from "../../utils/haversine";
+import { getUserLocation, calculateHaversineDistance, formatDistance, type UserCoordinates } from "../../utils/haversine";
 
 // Backend enum -> filter chip label
 const ROOM_TYPES: { value: Room["roomType"]; label: string }[] = [
@@ -44,13 +44,9 @@ const AMENITY_OPTIONS = [
   "Fully Furnished",
   "Pet Friendly",
 ];
-const QUICK_FILTERS = ["WiFi", "Parking"];
+const LANDMARKS = ["College", "Hospital", "Main Road"];
 const PRICE_MIN = 2000;
 const PRICE_MAX = 50000;
-// NOTE: the Prisma Room model has no dedicated "landmark" field, so this filters
-// rooms whose location/address text contains the landmark keyword — a best-effort
-// match, not a real geo lookup. Add a proper landmarks table/field for accuracy.
-const LANDMARKS = ["College", "Hospital", "Main Road"];
 
 // Deterministic pseudo-position on the mock map so pins don't jump between renders.
 function mapPosition(id: number): { top: string; left: string } {
@@ -61,6 +57,9 @@ function mapPosition(id: number): { top: string; left: string } {
 
 export default function FindProperty({ user, onLogout, onNavigate }: FindPropertyProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationResult[]>([]);
+  const [recommendationSource, setRecommendationSource] = useState<"cosine" | "popular">("popular");
+  const [usingRecommendations, setUsingRecommendations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
@@ -70,7 +69,6 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   const [roomType, setRoomType] = useState<Room["roomType"] | "All">("All");
   const [availableNow, setAvailableNow] = useState(false);
   const [amenities, setAmenities] = useState<Set<string>>(new Set());
-  const [quickFilters, setQuickFilters] = useState<Set<string>>(new Set());
   const [minPrice, setMinPrice] = useState(PRICE_MIN);
   const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
   // Multi-select: user can pick one OR more landmarks (School, Hospital, Main Road...)
@@ -98,50 +96,86 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     let cancelled = false;
     setLoading(true);
 
-    const queryParams: Record<string, any> = {
-      status: "AVAILABLE",
-      userLat: userLoc?.latitude,
-      userLng: userLoc?.longitude,
-      maxDistance,
-      sortBy: sort,
-    };
+    // Check if any filters are applied
+    const hasFilters = 
+      query.trim() !== "" ||
+      roomType !== "All" ||
+      availableNow ||
+      minPrice > PRICE_MIN ||
+      maxPrice < PRICE_MAX ||
+      amenities.size > 0 ||
+      landmarks.size > 0 ||
+      maxDistance < 50;
 
-    if (query) queryParams.search = query;
-    if (roomType !== "All") queryParams.roomType = roomType;
-    if (minPrice > PRICE_MIN) queryParams.minPrice = minPrice;
-    if (maxPrice < PRICE_MAX) queryParams.maxPrice = maxPrice;
-    if (amenities.size > 0) queryParams.amenities = Array.from(amenities).join(",");
+    // Update the usingRecommendations state
+    setUsingRecommendations(!hasFilters);
 
-    Promise.all([api.getRooms(queryParams), api.getFavorites()])
-      .then(([roomsRes, favRes]) => {
-        if (cancelled) return;
-        if (roomsRes && roomsRes.success === false) {
-          setError(roomsRes.message || "Failed to load rooms");
-        } else {
-          const roomList = Array.isArray(roomsRes) ? roomsRes : roomsRes?.rooms || roomsRes?.data || [];
-          setRooms(roomList);
-        }
-        const favList = Array.isArray(favRes) ? favRes : favRes?.favorites || favRes?.data || [];
-        setSavedIds(new Set(favList.map((f: { roomId: number }) => f.roomId)));
-      })
-      .catch(() => !cancelled && setError("Failed to load rooms"))
-      .finally(() => !cancelled && setLoading(false));
+    if (hasFilters) {
+      // Use regular rooms API with filters - filter priority
+      const queryParams: Record<string, any> = {
+        status: "AVAILABLE",
+        userLat: userLoc?.latitude,
+        userLng: userLoc?.longitude,
+        maxDistance,
+        sortBy: sort,
+      };
+
+      if (query) queryParams.search = query;
+      if (roomType !== "All") queryParams.roomType = roomType;
+      if (minPrice > PRICE_MIN) queryParams.minPrice = minPrice;
+      if (maxPrice < PRICE_MAX) queryParams.maxPrice = maxPrice;
+      if (amenities.size > 0) queryParams.amenities = Array.from(amenities).join(",");
+
+      Promise.all([api.getRooms(queryParams), api.getFavorites()])
+        .then(([roomsRes, favRes]) => {
+          if (cancelled) return;
+          if (roomsRes && roomsRes.success === false) {
+            setError(roomsRes.message || "Failed to load rooms");
+          } else {
+            const roomList = Array.isArray(roomsRes) ? roomsRes : roomsRes?.rooms || roomsRes?.data || [];
+            setRooms(roomList);
+            setRecommendations([]); // Clear recommendations when using filters
+          }
+          const favList = Array.isArray(favRes) ? favRes : favRes?.favorites || favRes?.data || [];
+          setSavedIds(new Set(favList.map((f: { roomId: number }) => f.roomId)));
+        })
+        .catch(() => !cancelled && setError("Failed to load rooms"))
+        .finally(() => !cancelled && setLoading(false));
+    } else {
+      // No filters applied - use recommendations and show all available rooms with recommended on top
+      Promise.all([api.getTenantDashboard(), api.getRooms({ status: "AVAILABLE" }), api.getFavorites()])
+        .then(([dashboardRes, roomsRes, favRes]) => {
+          if (cancelled) return;
+          if (dashboardRes && dashboardRes.success === false) {
+            setError(dashboardRes.message || "Failed to load recommendations");
+          } else {
+            const recs = dashboardRes?.recommendations || [];
+            setRecommendations(recs);
+            setRecommendationSource(dashboardRes?.recommendationSource || "popular");
+
+            const allAvailable = Array.isArray(roomsRes) ? roomsRes : roomsRes?.rooms || roomsRes?.data || [];
+            const recIdSet = new Set(recs.map((rec: RecommendationResult) => rec.room?.id).filter(Boolean));
+            const recRooms = recs.map((rec: RecommendationResult) => rec.room).filter(Boolean);
+            const otherRooms = allAvailable.filter((r: Room) => !recIdSet.has(r.id));
+
+            setRooms([...recRooms, ...otherRooms]);
+          }
+          const favList = Array.isArray(favRes) ? favRes : favRes?.favorites || favRes?.data || [];
+          setSavedIds(new Set(favList.map((f: { roomId: number }) => f.roomId)));
+        })
+        .catch(() => !cancelled && setError("Failed to load recommendations"))
+        .finally(() => !cancelled && setLoading(false));
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [userLoc, sort, maxDistance, query, roomType, minPrice, maxPrice, amenities]);
+  }, [userLoc, sort, maxDistance, query, roomType, minPrice, maxPrice, amenities, availableNow, landmarks]);
 
   const toggleAmenity = (a: string) =>
     setAmenities((prev) => {
       const next = new Set(prev);
       next.has(a) ? next.delete(a) : next.add(a);
-      return next;
-    });
-
-  const toggleQuickFilter = (q: string) =>
-    setQuickFilters((prev) => {
-      const next = new Set(prev);
-      next.has(q) ? next.delete(q) : next.add(q);
       return next;
     });
 
@@ -151,6 +185,22 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
       next.has(l) ? next.delete(l) : next.add(l);
       return next;
     });
+
+  const refreshRecommendations = () => {
+    Promise.all([api.getTenantDashboard(), api.getRooms({ status: "AVAILABLE" })]).then(([dashboardRes, roomsRes]) => {
+      if (!dashboardRes?.success || !Array.isArray(dashboardRes.recommendations)) return;
+      const recs = dashboardRes.recommendations;
+      setRecommendations(recs);
+      setRecommendationSource(dashboardRes.recommendationSource || "popular");
+
+      const allAvailable = Array.isArray(roomsRes) ? roomsRes : roomsRes?.rooms || roomsRes?.data || [];
+      const recIdSet = new Set(recs.map((rec: RecommendationResult) => rec.room?.id).filter(Boolean));
+      const recRooms = recs.map((rec: RecommendationResult) => rec.room).filter(Boolean);
+      const otherRooms = allAvailable.filter((r: Room) => !recIdSet.has(r.id));
+
+      setRooms([...recRooms, ...otherRooms]);
+    });
+  };
 
   const toggleSave = async (roomId: number) => {
     setSavingId(roomId);
@@ -170,6 +220,8 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
           wasSaved ? next.add(roomId) : next.delete(roomId);
           return next;
         });
+      } else if (!wasSaved && usingRecommendations) {
+        refreshRecommendations();
       }
     } catch {
       setSavedIds((prev) => {
@@ -189,6 +241,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     setMinPrice(PRICE_MIN);
     setMaxPrice(PRICE_MAX);
     setLandmarks(new Set());
+    setMaxDistance(50);
   };
 
   const openDetails = (room: Room) => setSelectedRoom(room);
@@ -240,33 +293,91 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     onNavigate(NAV_LABEL_TO_VIEW["My Requests"]);
   };
 
-  const filtered = useMemo(() => {
-    let list = rooms.filter((r) => {
-      const matchesQuery =
-        query.trim() === "" ||
-        r.location.toLowerCase().includes(query.toLowerCase()) ||
-        r.title.toLowerCase().includes(query.toLowerCase()) ||
-        r.city.toLowerCase().includes(query.toLowerCase());
-      const matchesType = roomType === "All" || r.roomType === roomType;
-      const matchesAvailable = !availableNow || r.status === "AVAILABLE";
-      const matchesPrice = r.price >= minPrice && r.price <= maxPrice;
-      // OR match: room qualifies if it's near ANY of the selected landmarks
-      const matchesLandmark =
-        landmarks.size === 0 ||
-        [...landmarks].some(
-          (l) =>
-            r.location.toLowerCase().includes(l.toLowerCase()) ||
-            (r as any).address?.toLowerCase().includes(l.toLowerCase())
-        );
-      const roomAmenityNames = (r.roomAmenities || []).map((ra) => ra.amenity.name);
-      const matchesAmenities = [...amenities].every((a) => roomAmenityNames.includes(a));
-      const matchesQuick = [...quickFilters].every((q) => roomAmenityNames.includes(q));
-      return matchesQuery && matchesType && matchesAvailable && matchesPrice && matchesLandmark && matchesAmenities && matchesQuick;
+  const recommendationMap = useMemo(() => {
+    const map = new Map<number, RecommendationResult>();
+    recommendations.forEach((rec) => {
+      if (rec.room?.id) {
+        map.set(rec.room.id, rec);
+      }
     });
-    if (sort === "price") list = [...list].sort((a, b) => a.price - b.price);
-    else list = [...list].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    return list;
-  }, [rooms, query, roomType, availableNow, minPrice, maxPrice, landmarks, amenities, quickFilters, sort]);
+    return map;
+  }, [recommendations]);
+
+  const getRoomDistance = (room: Room): number => {
+    if (room.distance !== undefined && room.distance !== null && !isNaN(room.distance)) {
+      return room.distance;
+    }
+    if (userLoc && room.latitude !== undefined && room.longitude !== undefined) {
+      const d = calculateHaversineDistance(userLoc.latitude, userLoc.longitude, room.latitude, room.longitude);
+      if (d !== null) return d;
+    }
+    return 999999;
+  };
+
+  const getRoomPopularity = (room: Room): number => {
+    const rec = recommendationMap.get(room.id);
+    if (rec?.popularityScore !== undefined) return rec.popularityScore;
+    if (room.popularityScore !== undefined) return room.popularityScore;
+    const rating = avgRating(room) || 0;
+    const favs = room.favorites?.length || 0;
+    return rating * 10 + favs;
+  };
+
+  const filtered = useMemo(() => {
+    let list = rooms;
+
+    if (!usingRecommendations) {
+      list = rooms.filter((r) => {
+        const matchesQuery =
+          query.trim() === "" ||
+          r.location.toLowerCase().includes(query.toLowerCase()) ||
+          r.title.toLowerCase().includes(query.toLowerCase()) ||
+          r.city.toLowerCase().includes(query.toLowerCase());
+        const matchesType = roomType === "All" || r.roomType === roomType;
+        const matchesAvailable = !availableNow || r.status === "AVAILABLE";
+        const matchesPrice = r.price >= minPrice && r.price <= maxPrice;
+        const matchesLandmark =
+          landmarks.size === 0 ||
+          [...landmarks].some(
+            (l) =>
+              r.location.toLowerCase().includes(l.toLowerCase()) ||
+              (r as any).address?.toLowerCase().includes(l.toLowerCase())
+          );
+        const roomAmenityNames = (r.roomAmenities || []).map((ra) => ra.amenity.name);
+        const matchesAmenities = [...amenities].every((a) => roomAmenityNames.includes(a));
+        return matchesQuery && matchesType && matchesAvailable && matchesPrice && matchesLandmark && matchesAmenities;
+      });
+    }
+
+    if (sort === "popularity") {
+      return [...list].sort((a, b) => getRoomPopularity(b) - getRoomPopularity(a));
+    } else if (sort === "distance") {
+      return [...list].sort((a, b) => getRoomDistance(a) - getRoomDistance(b));
+    } else if (sort === "price" || sort === "price_asc") {
+      return [...list].sort((a, b) => a.price - b.price);
+    } else if (sort === "price_desc") {
+      return [...list].sort((a, b) => b.price - a.price);
+    } else if (sort === "newest") {
+      return [...list].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    } else {
+      // Default: "recommended"
+      if (usingRecommendations && recommendations.length > 0) {
+        const recList: Room[] = [];
+        const otherList: Room[] = [];
+        list.forEach((r) => {
+          if (recommendationMap.has(r.id)) {
+            recList.push(r);
+          } else {
+            otherList.push(r);
+          }
+        });
+        recList.sort((a, b) => (recommendationMap.get(b.id)?.finalScore ?? 0) - (recommendationMap.get(a.id)?.finalScore ?? 0));
+        otherList.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        return [...recList, ...otherList];
+      }
+      return [...list].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    }
+  }, [rooms, query, roomType, availableNow, minPrice, maxPrice, landmarks, amenities, sort, usingRecommendations, recommendations, recommendationMap, userLoc]);
 
   const activeFilterCount =
     (roomType !== "All" ? 1 : 0) +
@@ -281,7 +392,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
       <Sidebar
         user={user}
-        active="Find Rooms"
+        active="Find Property"
         onNavigate={handleNavigate}
         onSettings={() => onNavigate("settings")}
         onLogout={onLogout}
@@ -491,10 +602,36 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
               </div>
             ) : (
               <>
+                {usingRecommendations && (
+                  <div className="mb-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 sm:flex-row sm:items-center">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+                        <Sparkles size={16} />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-blue-700">Personalized Recommendations</p>
+                        <p className="text-xs text-stone-500">
+                          {recommendationSource === "cosine"
+                            ? "Rooms matched to your saved favorites using cosine similarity."
+                            : "Popular rooms ranked by ratings and favorites — save one to unlock personalized matches."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-stone-500">
-                    Showing {filtered.length} of {rooms.length} rooms
-                  </p>
+                  <div className="flex items-center gap-2">
+                    {usingRecommendations && (
+                      <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        <Sparkles size={12} />
+                        {recommendationSource === "cosine" ? "Content-Based" : "Popularity Ranked"}
+                      </span>
+                    )}
+                    <p className="text-sm text-stone-500">
+                      Showing {filtered.length} {usingRecommendations ? `rooms (${recommendations.length} recommended on top)` : "of " + rooms.length + " rooms"}
+                    </p>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setView("grid")}
@@ -517,13 +654,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                     onClick={() => setSort("recommended")}
                     className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "recommended" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
                   >
-                    ✨ Recommended (Cosine)
-                  </button>
-                  <button
-                    onClick={() => setSort("match")}
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "match" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
-                  >
-                    ⚡ Cosine Match
+                    ✨ Recommended
                   </button>
                   <button
                     onClick={() => setSort("popularity")}
@@ -535,7 +666,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                     onClick={() => setSort("distance")}
                     className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${sort === "distance" ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
                   >
-                    📍 Nearest (Haversine)
+                    📍 Nearest
                   </button>
                   <button
                     onClick={() => setSort("price_asc")}
@@ -555,26 +686,16 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                   >
                     Newest
                   </button>
-                  <span className="mx-1 h-4 w-px shrink-0 bg-stone-200" />
-                  {QUICK_FILTERS.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => toggleQuickFilter(q)}
-                      className={`flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                        quickFilters.has(q) ? "border-blue-600 bg-blue-50 text-blue-600" : "border-stone-200 text-stone-600 hover:bg-stone-50"
-                      }`}
-                    >
-                      {q}
-                    </button>
-                  ))}
                 </div>
 
                 <div className={view === "grid" ? "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-3"}>
                   {filtered.map((room) => {
                     const rating = avgRating(room);
                     const amenityNames = (room.roomAmenities || []).map((ra) => ra.amenity.name);
+                    const recItem = usingRecommendations ? recommendationMap.get(room.id) : undefined;
+                    const match = recItem ? formatMatchPercent(recItem, recommendationSource) : null;
                     return (
-                      <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+                      <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xs transition-shadow hover:shadow-md">
                         <button
                           onClick={() => openDetails(room)}
                           className="relative block h-40 w-full sm:h-44 md:h-40"
@@ -584,11 +705,17 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                             alt={room.title}
                             className="h-full w-full object-cover"
                           />
-                          {room.status === "AVAILABLE" && (
+                          {match ? (
+                            <span className={`absolute left-2.5 top-2.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-xs ${
+                              match.hasScore ? "bg-stone-900/85" : "bg-blue-600/85"
+                            }`}>
+                              {match.hasScore ? `⚡ ${match.text}` : match.text}
+                            </span>
+                          ) : room.status === "AVAILABLE" ? (
                             <span className="absolute left-2 top-2 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white">
                               Available Now
                             </span>
-                          )}
+                          ) : null}
                         </button>
                         <div className="p-3">
                           <div className="mb-1 flex items-center justify-between gap-2">
@@ -599,8 +726,15 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                               </span>
                             )}
                           </div>
-                          <p className="mb-2 flex items-center gap-1 text-xs text-stone-500">
-                            <MapPin size={11} /> {room.location}, {room.city}
+                          <p className="mb-2 flex items-center justify-between gap-1 text-xs text-stone-500">
+                            <span className="flex items-center gap-1 truncate">
+                              <MapPin size={11} /> {room.location}, {room.city}
+                            </span>
+                            {getRoomDistance(room) < 999999 && (
+                              <span className="shrink-0 text-[11px] font-medium text-blue-600">
+                                {formatDistance(getRoomDistance(room))} away
+                              </span>
+                            )}
                           </p>
                           <p className="text-sm font-semibold text-blue-700">
                             Rs. {room.price.toLocaleString()}/month

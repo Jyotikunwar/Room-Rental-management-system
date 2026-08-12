@@ -1,6 +1,7 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { resolveDashboardRecommendations } from "../services/recommendation.service";
 
 // GET /api/tenant/dashboard (protected - TENANT)
 // Combines several small queries into one response for the dashboard page.
@@ -8,7 +9,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.user!.id;
 
-    const [availableRoomsCount, savedRooms, activeBooking, notifications, messages, favoritesCount] =
+    const [availableRoomsCount, savedRooms, activeBooking, notifications, messages, favoritesCount, recommendationData] =
       await Promise.all([
         prisma.room.count({ where: { status: "AVAILABLE" } }),
         prisma.favorite.findMany({
@@ -19,7 +20,10 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
         }),
         prisma.booking.findFirst({
           where: { tenantId, status: "APPROVED" },
-          include: { room: true, payment: true },
+          include: {
+            room: { include: { roomImages: true } },
+            payment: true,
+          },
           orderBy: { createdAt: "desc" },
         }),
         prisma.notification.findMany({
@@ -34,6 +38,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
           take: 5,
         }),
         prisma.favorite.count({ where: { userId: tenantId } }),
+        resolveDashboardRecommendations(tenantId, 6),
       ]);
 
     const pendingRequestsCount = await prisma.booking.count({
@@ -79,7 +84,8 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
       recentSaved: savedRooms,
       notifications,
       messages,
-      recommendations: [], // Recommendation engine not implemented yet
+      recommendations: recommendationData.recommendations,
+      recommendationSource: recommendationData.source,
     });
   } catch (error) {
     console.error("Get tenant dashboard error:", error);

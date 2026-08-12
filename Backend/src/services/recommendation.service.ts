@@ -160,16 +160,66 @@ export const getPersonalizedRecommendations = async (
 };
 
 /**
- * 6. Content-Based Recommendations based on Saved/Favorite Rooms
- * Builds an aggregate feature vector from all rooms saved by the tenant,
- * then computes Cosine Similarity against candidate available rooms.
+ * Popular room recommendations — ranked by rating + favorite count.
+ * Tries unsaved available rooms first, then all available, then any room in the DB.
+ */
+export const getPopularRoomRecommendations = async (
+  limit: number = 6,
+  excludeRoomIds: number[] = []
+) => {
+  const include = {
+    roomImages: true,
+    roomAmenities: { include: { amenity: true } },
+    reviews: true,
+    favorites: true,
+    landlord: { select: { id: true, fullName: true, phone: true } },
+  };
+
+  const scoreRooms = (rooms: Parameters<typeof calculatePopularityScore>[0][]) =>
+    rooms
+      .map((room) => {
+        const popularityScore = calculatePopularityScore(room);
+        return {
+          room,
+          similarityScore: 0,
+          popularityScore,
+          finalScore: popularityScore,
+        };
+      })
+      .sort((a, b) => b.finalScore - a.finalScore)
+      .slice(0, limit);
+
+  const excluded = [...new Set(excludeRoomIds.filter((id) => id > 0))];
+
+  if (excluded.length > 0) {
+    const unsavedAvailable = await prisma.room.findMany({
+      where: { status: "AVAILABLE", id: { notIn: excluded } },
+      include,
+    });
+    if (unsavedAvailable.length > 0) return scoreRooms(unsavedAvailable);
+  }
+
+  const available = await prisma.room.findMany({
+    where: { status: "AVAILABLE" },
+    include,
+  });
+  if (available.length > 0) return scoreRooms(available);
+
+  const anyRooms = await prisma.room.findMany({ include, take: Math.max(limit * 2, 12) });
+  return scoreRooms(anyRooms);
+};
+
+/**
+ * Content-Based Recommendations based on Saved/Favorite Rooms.
+ * Builds an aggregate feature vector from the tenant's saved rooms,
+ * then ranks available rooms by cosine similarity (70%) + popularity (30%).
+ * Returns an empty array when the tenant has no saved rooms.
  */
 export const getSavedRoomsContentBasedRecommendations = async (
   tenantId: number,
   limit: number = 6
 ) => {
-  // 1. Fetch saved rooms for this tenant
-  let userFavorites = await prisma.favorite.findMany({
+  const userFavorites = await prisma.favorite.findMany({
     where: { userId: tenantId },
     include: {
       room: {
@@ -183,29 +233,15 @@ export const getSavedRoomsContentBasedRecommendations = async (
     orderBy: { createdAt: "desc" },
   });
 
-  // 2. If this tenant has no saved rooms yet, fallback to saved rooms across all tenants in DB
-  if (userFavorites.length === 0) {
-    userFavorites = await prisma.favorite.findMany({
-      include: {
-        room: {
-          include: {
-            roomAmenities: { include: { amenity: true } },
-            reviews: true,
-            favorites: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
+  const validFavorites = userFavorites.filter((f) => f?.room);
+  if (validFavorites.length === 0) {
+    return [];
   }
 
-  // 3. Fetch candidate available rooms excluding the ones already in favorites
-  const validFavorites = userFavorites.filter((f) => f && f.room);
-  const savedRoomIds = new Set(validFavorites.map((f) => f.roomId));
-  let candidateRooms = await prisma.room.findMany({
+  const savedRoomIds = validFavorites.map((f) => f.roomId);
+  const candidateRooms = await prisma.room.findMany({
     where: {
-      id: { notIn: Array.from(savedRoomIds) },
+      id: { notIn: savedRoomIds },
       status: "AVAILABLE",
     },
     include: {
@@ -217,65 +253,93 @@ export const getSavedRoomsContentBasedRecommendations = async (
     },
   });
 
-  if (candidateRooms.length === 0) {
-    candidateRooms = await prisma.room.findMany({
-      include: {
-        roomImages: true,
-        roomAmenities: { include: { amenity: true } },
-        reviews: true,
-        favorites: true,
-        landlord: { select: { id: true, fullName: true, phone: true } },
-      },
-      take: 12,
-    });
-  }
-
   if (candidateRooms.length === 0) return [];
 
-  // Compute Content-Based Vector & Cosine Similarity
-  if (validFavorites.length > 0) {
-    const maxPrice = Math.max(
-      ...validFavorites.map((f) => f.room.price || 0),
-      ...candidateRooms.map((r) => r.price || 0),
-      50000
-    );
+  const maxPrice = Math.max(
+    ...validFavorites.map((f) => f.room.price || 0),
+    ...candidateRooms.map((r) => r.price || 0),
+    50000
+  );
 
-    const vectors = validFavorites.map((f) => roomToVector(f.room, maxPrice));
-    const vectorDim = vectors[0].length;
-    const userProfileVector: number[] = new Array(vectorDim).fill(0);
+  const vectors = validFavorites.map((f) => roomToVector(f.room, maxPrice));
+  const vectorDim = vectors[0].length;
+  const userProfileVector: number[] = new Array(vectorDim).fill(0);
 
-    for (let i = 0; i < vectorDim; i++) {
-      let sum = 0;
-      for (let j = 0; j < vectors.length; j++) {
-        sum += vectors[j][i];
-      }
-      userProfileVector[i] = sum / vectors.length;
+  for (let i = 0; i < vectorDim; i++) {
+    let sum = 0;
+    for (let j = 0; j < vectors.length; j++) {
+      sum += vectors[j][i];
     }
-
-    const scoredRooms = candidateRooms.map((candidate) => {
-      const candidateVector = roomToVector(candidate, maxPrice);
-      const cosineSimilarity = calculateCosineSimilarity(userProfileVector, candidateVector);
-      const popularityScore = calculatePopularityScore(candidate);
-
-      const finalScore = 0.7 * cosineSimilarity + 0.3 * popularityScore;
-
-      return {
-        room: candidate,
-        similarityScore: Math.round(cosineSimilarity * 100) / 100,
-        popularityScore: Math.round(popularityScore * 100) / 100,
-        finalScore: Math.round(finalScore * 100) / 100,
-      };
-    });
-
-    scoredRooms.sort((a, b) => b.finalScore - a.finalScore);
-    return scoredRooms.slice(0, limit);
+    userProfileVector[i] = sum / vectors.length;
   }
 
-  return candidateRooms.slice(0, limit).map((room) => ({
-    room,
-    similarityScore: 0.8,
-    popularityScore: calculatePopularityScore(room),
-    finalScore: 0.8,
-  }));
+  const scoredRooms = candidateRooms.map((candidate) => {
+    const candidateVector = roomToVector(candidate, maxPrice);
+    const cosineSimilarity = calculateCosineSimilarity(userProfileVector, candidateVector);
+    const popularityScore = calculatePopularityScore(candidate);
+    const finalScore = 0.7 * cosineSimilarity + 0.3 * popularityScore;
+
+    return {
+      room: candidate,
+      similarityScore: Math.round(cosineSimilarity * 100) / 100,
+      popularityScore: Math.round(popularityScore * 100) / 100,
+      finalScore: Math.round(finalScore * 100) / 100,
+    };
+  });
+
+  scoredRooms.sort((a, b) => b.finalScore - a.finalScore);
+  return scoredRooms.slice(0, limit);
+};
+
+/**
+ * Dashboard recommendation resolver:
+ * 1. Cosine similarity from saved rooms (if any saves exist)
+ * 2. Similar rooms to most recently saved (if cosine has no candidates)
+ * 3. Popular rooms (unsaved first, then broader fallbacks)
+ */
+export const resolveDashboardRecommendations = async (
+  tenantId: number,
+  limit: number = 6
+): Promise<{ recommendations: Awaited<ReturnType<typeof getPopularRoomRecommendations>>; source: "cosine" | "popular" }> => {
+  const favorites = await prisma.favorite.findMany({
+    where: { userId: tenantId },
+    include: {
+      room: {
+        include: {
+          roomAmenities: { include: { amenity: true } },
+          reviews: true,
+          favorites: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const savedRoomIds = favorites.map((f) => f.roomId);
+  const validFavorites = favorites.filter((f) => f?.room);
+
+  if (validFavorites.length > 0) {
+    const contentBased = await getSavedRoomsContentBasedRecommendations(tenantId, limit);
+    if (contentBased.length > 0) {
+      return { recommendations: contentBased, source: "cosine" };
+    }
+
+    for (const fav of validFavorites) {
+      try {
+        const similar = await getSimilarRoomRecommendations(fav.roomId, limit + savedRoomIds.length);
+        const filtered = similar
+          .filter((r) => r.room?.id && !savedRoomIds.includes(r.room.id))
+          .slice(0, limit);
+        if (filtered.length > 0) {
+          return { recommendations: filtered, source: "cosine" };
+        }
+      } catch {
+        // try next saved room
+      }
+    }
+  }
+
+  const popular = await getPopularRoomRecommendations(limit, savedRoomIds);
+  return { recommendations: popular, source: "popular" };
 };
 

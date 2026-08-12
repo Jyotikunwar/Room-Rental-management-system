@@ -6,7 +6,9 @@ export const UPLOAD_BASE_URL = API_BASE;
 export function getImageUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
-  return `${UPLOAD_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+  // Uploaded images are served by the backend; static /images/ assets stay on the frontend origin.
+  if (path.startsWith("/uploads/")) return `${UPLOAD_BASE_URL}${path}`;
+  return path;
 }
 export interface PublicStats {
   totalRooms: number;
@@ -247,6 +249,7 @@ export interface TenantDashboardData {
   notifications: Notification[];
   messages: Inquiry[];
   recommendations: RecommendationResult[];
+  recommendationSource?: "cosine" | "popular";
 }
 
 // Matches your real Complaint model — bookingId-scoped, filed by a tenant

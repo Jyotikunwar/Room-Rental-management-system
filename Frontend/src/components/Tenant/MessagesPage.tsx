@@ -10,7 +10,7 @@ import { Sidebar, type NavLabel } from "./Sidebar";
 
 const LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
   "Dashboard": "dashboard",
-  "Find Rooms": "search",
+  "Find Property": "search",
   "Saved Rooms": "saved",
   "My Requests": "requests",
   "Current Rental": "rental",

@@ -1,9 +1,7 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { getSimilarRoomRecommendations, getSavedRoomsContentBasedRecommendations } from "../services/recommendation.service";
-import { calculateCosineSimilarity } from "../utils/cosineSimilarity";
-import { calculatePopularityScore } from "../utils/popularityRanking";
+import { getSimilarRoomRecommendations, getSavedRoomsContentBasedRecommendations, getPopularRoomRecommendations, resolveDashboardRecommendations } from "../services/recommendation.service";
 import { calculateHaversineDistance } from "../utils/haversine";
 
 export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
@@ -91,48 +89,8 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    let recommendations: any[] = [];
-    const contentBasedRecs = await getSavedRoomsContentBasedRecommendations(tenantId, 6);
-
-    if (contentBasedRecs && contentBasedRecs.length > 0) {
-      recommendations = contentBasedRecs;
-    } else {
-      let topRooms = await prisma.room.findMany({
-        where: { status: "AVAILABLE" },
-        include: {
-          roomImages: true,
-          roomAmenities: { include: { amenity: true } },
-          reviews: true,
-          favorites: true,
-          landlord: { select: { id: true, fullName: true, phone: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 6,
-      });
-
-      if (topRooms.length === 0) {
-        topRooms = await prisma.room.findMany({
-          include: {
-            roomImages: true,
-            roomAmenities: { include: { amenity: true } },
-            reviews: true,
-            favorites: true,
-            landlord: { select: { id: true, fullName: true, phone: true } },
-          },
-          take: 6,
-        });
-      }
-
-      recommendations = topRooms.map((room) => {
-        const pop = calculatePopularityScore(room as any);
-        return {
-          room,
-          similarityScore: 0.85,
-          popularityScore: pop,
-          finalScore: 0.85,
-        };
-      });
-    }
+    const { recommendations, source: recommendationSource } =
+      await resolveDashboardRecommendations(tenantId, 6);
 
     const preferredLocation = recentFavorites[0]?.room?.location || "Baneshwor";
     const locationMatches = await prisma.room.count({
@@ -159,6 +117,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
       notifications: recentNotifications,
       messages: sentMessages,
       recommendations,
+      recommendationSource,
     });
   } catch (error) {
     console.error("Get tenant dashboard error:", error);

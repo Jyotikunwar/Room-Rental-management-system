@@ -9,7 +9,7 @@ import {
   getRoomRecommendations,
   uploadRoomImages,
 } from "../controllers/room.controller";
-import { authenticate, authorize } from "../middleware/auth.middleware";
+import { authenticate, authorize, optionalAuthenticate } from "../middleware/auth.middleware";
 import { upload } from "../middleware/upload.middleware";
 
 const router = Router();
