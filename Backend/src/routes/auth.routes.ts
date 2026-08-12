@@ -11,6 +11,9 @@ import {
   updateIdentification,
   uploadIdDocument,
   deleteAccount,
+  forgotPassword,
+  verifyResetToken,
+  resetPassword,
 } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth.middleware";
 import { upload } from "../middleware/upload.middleware";
@@ -20,6 +23,10 @@ const router = Router();
 
 router.post("/signup", signup);
 router.post("/login", login);
+router.post("/forgot-password", forgotPassword);
+router.get("/verify-reset-token/:token", verifyResetToken);
+router.post("/reset-password", resetPassword);
+
 
 router.get("/me", authenticate, getCurrentUser);
 router.patch("/me", authenticate, updateProfile);
