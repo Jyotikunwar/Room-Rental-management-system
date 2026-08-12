@@ -76,6 +76,7 @@ export interface Room {
   securityDeposit?: number;
   availableFrom?: string;
   status: "AVAILABLE" | "BOOKED" | "UNDER_MAINTENANCE";
+  approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
   createdAt?: string;
   roomImages?: RoomImage[];
   roomAmenities?: { amenity: Amenity }[];
@@ -650,6 +651,27 @@ export const api = {
   getAdminStats: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/dashboard`, {
       headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminProperties: async (params?: Record<string, any>) => {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/properties?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminPropertyStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/properties/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updatePropertyApproval: async (id: number, approvalStatus: "APPROVED" | "REJECTED" | "PENDING") => {
+    const res = await fetch(`${API_BASE_URL}/admin/properties/${id}/approval`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ approvalStatus }),
     });
     return res.json();
   },

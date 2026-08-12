@@ -35,7 +35,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "properties", label: "Properties", icon: Building2 },
+  { key: "properties", label: "Manage Properties", icon: Building2 },
   { key: "landlords", label: "Landlords", icon: UserCog },
   { key: "tenants", label: "Tenants", icon: Users },
   { key: "payments", label: "Payments", icon: CreditCard },
