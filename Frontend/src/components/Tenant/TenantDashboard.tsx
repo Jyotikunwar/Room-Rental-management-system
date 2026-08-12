@@ -71,6 +71,8 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   const [bookingRoom, setBookingRoom] = useState<Room | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const [fallbackRooms, setFallbackRooms] = useState<Room[]>([]);
+
   const loadDashboard = () => {
     setLoading(true);
     api
@@ -86,6 +88,17 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (data && (!data.recommendations || data.recommendations.length === 0)) {
+      api.getRooms({ status: "ALL" }).then((res: any) => {
+        const rooms = Array.isArray(res) ? res : res?.rooms || res?.data || [];
+        if (rooms.length > 0) {
+          setFallbackRooms(rooms.slice(0, 6));
+        }
+      });
+    }
+  }, [data]);
 
   const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
 
@@ -146,7 +159,10 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
     );
   }
 
-  const { stats, activeRental, recentSaved, notifications, recommendations } = data;
+  const { stats, activeRental, recentSaved, notifications } = data;
+  const displayRecommendations = (data.recommendations && data.recommendations.length > 0)
+    ? data.recommendations
+    : fallbackRooms;
 
   return (
     <div className="flex min-h-screen w-full bg-stone-50 text-stone-900">
@@ -294,13 +310,13 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
             View All <ChevronRight size={14} />
           </button>
         </div>
-        {recommendations.length === 0 ? (
+        {displayRecommendations.length === 0 ? (
           <p className="mb-8 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-400">
             No recommendations yet — save a room to get personalized matches.
           </p>
         ) : (
           <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {recommendations.map((item: any) => {
+            {displayRecommendations.map((item: any) => {
               const room: Room = item?.room || item;
               if (!room || !room.id) return null;
               const matchScore = item?.similarityScore ?? item?.finalScore ?? 0.85;

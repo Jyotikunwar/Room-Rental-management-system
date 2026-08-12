@@ -97,7 +97,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
     if (contentBasedRecs && contentBasedRecs.length > 0) {
       recommendations = contentBasedRecs;
     } else {
-      const topRooms = await prisma.room.findMany({
+      let topRooms = await prisma.room.findMany({
         where: { status: "AVAILABLE" },
         include: {
           roomImages: true,
@@ -109,12 +109,29 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
         orderBy: { createdAt: "desc" },
         take: 6,
       });
-      recommendations = topRooms.map((room) => ({
-        room,
-        similarityScore: 0,
-        popularityScore: 0,
-        finalScore: 0,
-      }));
+
+      if (topRooms.length === 0) {
+        topRooms = await prisma.room.findMany({
+          include: {
+            roomImages: true,
+            roomAmenities: { include: { amenity: true } },
+            reviews: true,
+            favorites: true,
+            landlord: { select: { id: true, fullName: true, phone: true } },
+          },
+          take: 6,
+        });
+      }
+
+      recommendations = topRooms.map((room) => {
+        const pop = calculatePopularityScore(room as any);
+        return {
+          room,
+          similarityScore: 0.85,
+          popularityScore: pop,
+          finalScore: 0.85,
+        };
+      });
     }
 
     const preferredLocation = recentFavorites[0]?.room?.location || "Baneshwor";

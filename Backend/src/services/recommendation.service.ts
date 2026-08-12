@@ -219,7 +219,6 @@ export const getSavedRoomsContentBasedRecommendations = async (
 
   if (candidateRooms.length === 0) {
     candidateRooms = await prisma.room.findMany({
-      where: { status: "AVAILABLE" },
       include: {
         roomImages: true,
         roomAmenities: { include: { amenity: true } },
@@ -227,6 +226,7 @@ export const getSavedRoomsContentBasedRecommendations = async (
         favorites: true,
         landlord: { select: { id: true, fullName: true, phone: true } },
       },
+      take: 12,
     });
   }
 
