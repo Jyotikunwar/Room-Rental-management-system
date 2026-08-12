@@ -26,6 +26,12 @@ enum RoomStatus {
   UNDER_MAINTENANCE
 }
 
+enum RoomApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum BookingStatus {
   PENDING
   APPROVED
@@ -125,7 +131,8 @@ model Room {
 
   availableFrom DateTime?
 
-  status RoomStatus @default(AVAILABLE)
+  status         RoomStatus         @default(AVAILABLE)
+  approvalStatus RoomApprovalStatus @default(APPROVED)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -142,6 +149,7 @@ model Room {
   @@index([city])
   @@index([price])
   @@index([status])
+  @@index([approvalStatus])
 }
 
 model RoomImage {

@@ -44,6 +44,7 @@ export const createRoom = async (req: AuthRequest, res: Response) => {
       data: {
         ...roomData,
         landlordId: req.user!.id,
+        approvalStatus: req.user!.role === "ADMIN" ? "APPROVED" : "PENDING",
         availableFrom: availableFrom ? new Date(availableFrom) : undefined,
         roomAmenities: amenityIds.length
           ? { create: amenityIds.map((id) => ({ amenityId: id })) }
@@ -72,6 +73,7 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
       minPrice,
       maxPrice,
       status,
+      approvalStatus,
       search,
       amenities,
       wifi,
@@ -130,6 +132,13 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
         ? [{ status: status as any }]
         : [{ status: "AVAILABLE" as const }];
 
+    const approvalCondition =
+      approvalStatus === "ALL"
+        ? []
+        : approvalStatus
+        ? [{ approvalStatus: String(approvalStatus).toUpperCase() as any }]
+        : [{ approvalStatus: "APPROVED" as const }];
+
     let rawRooms = await prisma.room.findMany({
       where: {
         AND: [
@@ -137,6 +146,7 @@ export const getRooms = async (req: AuthRequest, res: Response) => {
           ...(location ? [{ location: { contains: String(location), mode: "insensitive" as const } }] : []),
           ...(roomType ? [{ roomType: roomType as any }] : []),
           ...statusCondition,
+          ...approvalCondition,
           ...(minPrice || maxPrice
             ? [
                 {

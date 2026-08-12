@@ -215,3 +215,108 @@ export const updateLandlordProfile = async (req: AuthRequest, res: Response) => 
     return res.status(500).json({ success: false, message: "Failed to update landlord", error: err.message });
   }
 };
+
+// GET /api/admin/properties
+export const getAdminProperties = async (req: AuthRequest, res: Response) => {
+  try {
+    const { approvalStatus, status, search, city, roomType } = req.query;
+
+    const whereClause: any = {};
+
+    if (approvalStatus && approvalStatus !== "ALL") {
+      whereClause.approvalStatus = String(approvalStatus).toUpperCase();
+    }
+    if (status && status !== "ALL") {
+      whereClause.status = String(status).toUpperCase();
+    }
+    if (city) {
+      whereClause.city = { equals: String(city), mode: "insensitive" };
+    }
+    if (roomType) {
+      whereClause.roomType = String(roomType).toUpperCase();
+    }
+    if (search) {
+      whereClause.OR = [
+        { title: { contains: String(search), mode: "insensitive" } },
+        { location: { contains: String(search), mode: "insensitive" } },
+        { city: { contains: String(search), mode: "insensitive" } },
+      ];
+    }
+
+    const rooms = await prisma.room.findMany({
+      where: whereClause,
+      include: {
+        roomImages: true,
+        roomAmenities: { include: { amenity: true } },
+        landlord: { select: { id: true, fullName: true, phone: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.status(200).json({ success: true, count: rooms.length, rooms });
+  } catch (error: any) {
+    console.error("Get admin properties error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch properties", error: error.message });
+  }
+};
+
+// GET /api/admin/properties/stats
+export const getAdminPropertyStats = async (req: AuthRequest, res: Response) => {
+  try {
+    const [total, pending, approved, rejected] = await Promise.all([
+      prisma.room.count(),
+      prisma.room.count({ where: { approvalStatus: "PENDING" } }),
+      prisma.room.count({ where: { approvalStatus: "APPROVED" } }),
+      prisma.room.count({ where: { approvalStatus: "REJECTED" } }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        total,
+        pending,
+        approved,
+        rejected,
+      },
+    });
+  } catch (error: any) {
+    console.error("Get admin property stats error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch property stats", error: error.message });
+  }
+};
+
+// PATCH /api/admin/properties/:id/approval
+export const updatePropertyApprovalStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { approvalStatus } = req.body;
+
+    if (!approvalStatus || !["APPROVED", "REJECTED", "PENDING"].includes(approvalStatus)) {
+      return res.status(400).json({ success: false, message: "Invalid approval status provided" });
+    }
+
+    const existingRoom = await prisma.room.findUnique({ where: { id } });
+    if (!existingRoom) {
+      return res.status(404).json({ success: false, message: "Property not found" });
+    }
+
+    const updatedRoom = await prisma.room.update({
+      where: { id },
+      data: { approvalStatus },
+      include: {
+        roomImages: true,
+        roomAmenities: { include: { amenity: true } },
+        landlord: { select: { id: true, fullName: true, phone: true, email: true } },
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Property approval status updated to ${approvalStatus}`,
+      room: updatedRoom,
+    });
+  } catch (error: any) {
+    console.error("Update property approval status error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update property approval status", error: error.message });
+  }
+};
