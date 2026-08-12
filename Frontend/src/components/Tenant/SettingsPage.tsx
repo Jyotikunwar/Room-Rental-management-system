@@ -8,6 +8,7 @@ import type { User, PaymentMethod } from "../../services/api";
 import { api } from "../../services/api";
 import type { TenantView } from "./navigation";
 import { Sidebar, type NavLabel } from "./Sidebar";
+import EnterLocationSection from "./EnterLocationSection";
 
 const LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
   "Dashboard": "dashboard",
@@ -423,6 +424,8 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
               </div>
             </form>
           </section>
+
+          <EnterLocationSection />
 
           {/* ---- Identity Verification ---- */}
           <section className="mb-6 rounded-2xl border border-stone-200 bg-white p-5">

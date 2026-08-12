@@ -1,14 +1,17 @@
+// src/components/Tenant/TenantDashboard.tsx
 import { useEffect, useState } from "react";
 import {
   Search, Heart, Clock, ClipboardList, Sparkles,
   ChevronRight, Plus, Eye, CreditCard, Phone,
-  AlertTriangle, UserPlus2, MessageCircle, Loader2, ImageOff, X,
+  AlertTriangle, UserPlus2, MessageCircle, Loader2, ImageOff,
 } from "lucide-react";
 import type { User, DashboardStats, Booking, Favorite, Notification, RecommendationResult, Room } from "../../services/api";
 import { api, getImageUrl } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
+import RoomDetailsModal from "./RoomDetailsModal";
+import BookingModal from "./BookingModal";
 
 interface TenantDashboardProps {
   user: User;
@@ -33,10 +36,6 @@ const NOTIF_ICON: Record<Notification["type"], typeof AlertTriangle> = {
   REVIEW: MessageCircle,
   SYSTEM: MessageCircle,
 };
-
-function stashSearchFilters(filters: Record<string, unknown>) {
-  sessionStorage.setItem("tenantSearchFilters", JSON.stringify(filters));
-}
 
 function timeAgo(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -68,10 +67,19 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingRoomId, setSavingRoomId] = useState<number | null>(null);
-  const [bookingRoom, setBookingRoom] = useState<Room | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   const [fallbackRooms, setFallbackRooms] = useState<Room[]>([]);
+
+  // --- View Details modal ---
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+
+  // --- Book Now modal ---
+  const [bookingRoom, setBookingRoom] = useState<Room | null>(null);
+  const [bookingMoveInDate, setBookingMoveInDate] = useState("");
+  const [bookingNotes, setBookingNotes] = useState("");
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState(false);
 
   const loadDashboard = () => {
     setLoading(true);
@@ -102,11 +110,6 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
 
   const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2500);
-  };
-
   const toggleSave = async (roomId: number) => {
     setSavingRoomId(roomId);
     const alreadySaved = savedRoomIds.has(roomId);
@@ -127,14 +130,54 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
     }
   };
 
+  const openDetails = (room: Room) => setSelectedRoom(room);
 
+  const openBooking = (room: Room) => {
+    setSelectedRoom(null);
+    setBookingRoom(room);
+    setBookingMoveInDate("");
+    setBookingNotes("");
+    setBookingError(null);
+    setBookingSuccess(false);
+  };
 
-  // No room-detail page hook is wired into this dashboard yet — the closest
-  // real action is taking them to Find Rooms pre-filtered to this room's
-  // title, so they land on something searchable rather than a dead click.
-  const viewRoomDetails = (room: Room) => {
-    stashSearchFilters({ query: room.title });
-    onNavigate("search");
+  const closeBooking = () => {
+    setBookingRoom(null);
+    setBookingSubmitting(false);
+    setBookingError(null);
+    setBookingSuccess(false);
+  };
+
+  const submitBooking = async () => {
+    if (!bookingRoom) return;
+    if (!bookingMoveInDate) {
+      setBookingError("Please select a move-in date");
+      return;
+    }
+    setBookingSubmitting(true);
+    setBookingError(null);
+    try {
+      const res = await api.createBooking({
+        roomId: bookingRoom.id,
+        moveInDate: bookingMoveInDate,
+        notes: bookingNotes || undefined,
+      });
+      if (res && res.success === false) {
+        setBookingError(res.message || "Failed to create booking");
+      } else {
+        setBookingSuccess(true);
+        loadDashboard();
+      }
+    } catch (e) {
+      setBookingError("Failed to create booking. Please try again.");
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const goToMyRequests = () => {
+    closeBooking();
+    onNavigate("requests");
   };
 
   const firstName = user.fullName?.split(" ")[0] || "there";
@@ -350,14 +393,15 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
                         <Heart size={14} fill={savedRoomIds.has(room.id) ? "currentColor" : "none"} />
                       </button>
                       <button
-                        onClick={() => viewRoomDetails(room)}
+                        onClick={() => openDetails(room)}
                         className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-[0.97]"
                       >
                         View Details
                       </button>
                       <button
-                        onClick={() => setBookingRoom(room)}
-                        className="flex-1 rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97]"
+                        onClick={() => openBooking(room)}
+                        disabled={room.status !== "AVAILABLE"}
+                        className="flex-1 rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-stone-300"
                       >
                         Book Now
                       </button>
@@ -429,76 +473,33 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
         </div>
       </main>
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-stone-900 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
-          {toast}
-        </div>
-      )}
-
-      {bookingRoom && (
-        <BookNowModal
-          room={bookingRoom}
-          onClose={() => setBookingRoom(null)}
-          onBooked={() => {
-            setBookingRoom(null);
-            showToast("Booking request sent!");
-            loadDashboard();
-          }}
+      {/* ---- Room Details Modal ---- */}
+      {selectedRoom && (
+        <RoomDetailsModal
+          room={selectedRoom}
+          isSaved={savedRoomIds.has(selectedRoom.id)}
+          onToggleSave={() => toggleSave(selectedRoom.id)}
+          onClose={() => setSelectedRoom(null)}
+          onBookNow={() => openBooking(selectedRoom)}
         />
       )}
-    </div>
-  );
-}
 
-function BookNowModal({ room, onClose, onBooked }: { room: Room; onClose: () => void; onBooked: () => void }) {
-  const [moveInDate, setMoveInDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit() {
-    if (!moveInDate) {
-      setError("Pick a move-in date.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res = await api.createBooking({ roomId: room.id, moveInDate, notes: notes.trim() || undefined });
-      if (res.success === false) throw new Error(res.message || "Couldn't send booking request.");
-      onBooked();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't send booking request.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-        <div className="mb-1 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-stone-900">Book "{room.title}"</h3>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
-        </div>
-        <p className="mb-4 text-xs text-stone-500">Rs. {room.price.toLocaleString()}/month · {room.location}</p>
-
-        {error && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</div>}
-
-        <label className="mb-3 block text-xs font-medium text-stone-500">
-          Move-in date
-          <input type="date" value={moveInDate} onChange={(e) => setMoveInDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none" />
-        </label>
-
-        <label className="mb-4 block text-xs font-medium text-stone-500">
-          Note to landlord (optional)
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none" />
-        </label>
-
-        <button onClick={handleSubmit} disabled={submitting} className="w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60">
-          {submitting ? "Sending..." : "Send Booking Request"}
-        </button>
-      </div>
+      {/* ---- Book Now Modal ---- */}
+      {bookingRoom && (
+        <BookingModal
+          room={bookingRoom}
+          moveInDate={bookingMoveInDate}
+          notes={bookingNotes}
+          submitting={bookingSubmitting}
+          error={bookingError}
+          success={bookingSuccess}
+          onMoveInDateChange={setBookingMoveInDate}
+          onNotesChange={setBookingNotes}
+          onSubmit={submitBooking}
+          onClose={closeBooking}
+          onGoToMyRequests={goToMyRequests}
+        />
+      )}
     </div>
   );
 }
