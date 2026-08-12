@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Calendar,
   Wrench,
   Clock,
   Loader2,
@@ -20,7 +19,6 @@ import {
   MoreVertical,
   Trash2,
   Eye,
-  User as UserIcon,
 } from "lucide-react";
 import { api, type MaintenanceRequest, type User } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";

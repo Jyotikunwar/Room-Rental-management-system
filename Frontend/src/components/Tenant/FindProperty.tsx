@@ -45,8 +45,27 @@ const AMENITY_OPTIONS = [
   "Pet Friendly",
 ];
 const LANDMARKS = ["College", "Hospital", "Main Road"];
-const PRICE_MIN = 2000;
-const PRICE_MAX = 50000;
+const LOCATION_COORDS: Record<string, { lat: number; lng: number }> = {
+  Baneshwor: { lat: 27.6938, lng: 85.3331 },
+  Kirtipur: { lat: 27.6792, lng: 85.2754 },
+  Thamel: { lat: 27.7154, lng: 85.3123 },
+  Chabahil: { lat: 27.7167, lng: 85.3472 },
+  Kalanki: { lat: 27.6936, lng: 85.2813 },
+  Patan: { lat: 27.6738, lng: 85.3168 },
+  Jawalakhel: { lat: 27.6728, lng: 85.3148 },
+  Kupondole: { lat: 27.6861, lng: 85.3135 },
+  Satdobato: { lat: 27.6548, lng: 85.3248 },
+  Suryabinayak: { lat: 27.6631, lng: 85.4294 },
+  Thimi: { lat: 27.6789, lng: 85.3789 },
+  "Durbar Square": { lat: 27.6722, lng: 85.4284 },
+  Lakeside: { lat: 28.2096, lng: 83.9575 },
+  Birauta: { lat: 28.1882, lng: 83.9712 },
+  Mahendrapool: { lat: 28.2215, lng: 83.9874 },
+  Kathmandu: { lat: 27.7172, lng: 85.3240 },
+  Lalitpur: { lat: 27.6670, lng: 85.3240 },
+  Bhaktapur: { lat: 27.6710, lng: 85.4298 },
+  Pokhara: { lat: 28.2096, lng: 83.9856 },
+};
 
 // Deterministic pseudo-position on the mock map so pins don't jump between renders.
 function mapPosition(id: number): { top: string; left: string } {
@@ -69,13 +88,13 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   const [roomType, setRoomType] = useState<Room["roomType"] | "All">("All");
   const [availableNow, setAvailableNow] = useState(false);
   const [amenities, setAmenities] = useState<Set<string>>(new Set());
-  const [minPrice, setMinPrice] = useState(PRICE_MIN);
-  const [maxPrice, setMaxPrice] = useState(PRICE_MAX);
+  const [minPrice, setMinPrice] = useState(0);
+  const [maxPrice, setMaxPrice] = useState(0);
   // Multi-select: user can pick one OR more landmarks (School, Hospital, Main Road...)
   const [landmarks, setLandmarks] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<string>("recommended");
-  const [maxDistance, setMaxDistance] = useState<number>(50);
+  const [maxDistanceMeters, setMaxDistanceMeters] = useState<number>(0);
   const [userLoc, setUserLoc] = useState<UserCoordinates | null>(getUserLocation());
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
@@ -101,11 +120,11 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
       query.trim() !== "" ||
       roomType !== "All" ||
       availableNow ||
-      minPrice > PRICE_MIN ||
-      maxPrice < PRICE_MAX ||
+      minPrice > 0 ||
+      maxPrice > 0 ||
       amenities.size > 0 ||
       landmarks.size > 0 ||
-      maxDistance < 50;
+      maxDistanceMeters > 0;
 
     // Update the usingRecommendations state
     setUsingRecommendations(!hasFilters);
@@ -116,14 +135,16 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
         status: "AVAILABLE",
         userLat: userLoc?.latitude,
         userLng: userLoc?.longitude,
-        maxDistance,
         sortBy: sort,
       };
+      if (maxDistanceMeters > 0) {
+        queryParams.maxDistance = maxDistanceMeters / 1000;
+      }
 
       if (query) queryParams.search = query;
       if (roomType !== "All") queryParams.roomType = roomType;
-      if (minPrice > PRICE_MIN) queryParams.minPrice = minPrice;
-      if (maxPrice < PRICE_MAX) queryParams.maxPrice = maxPrice;
+      if (minPrice > 0) queryParams.minPrice = minPrice;
+      if (maxPrice > 0) queryParams.maxPrice = maxPrice;
       if (amenities.size > 0) queryParams.amenities = Array.from(amenities).join(",");
 
       Promise.all([api.getRooms(queryParams), api.getFavorites()])
@@ -170,7 +191,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     return () => {
       cancelled = true;
     };
-  }, [userLoc, sort, maxDistance, query, roomType, minPrice, maxPrice, amenities, availableNow, landmarks]);
+  }, [userLoc, sort, maxDistanceMeters, query, roomType, minPrice, maxPrice, amenities, availableNow, landmarks]);
 
   const toggleAmenity = (a: string) =>
     setAmenities((prev) => {
@@ -238,10 +259,10 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     setRoomType("All");
     setAvailableNow(false);
     setAmenities(new Set());
-    setMinPrice(PRICE_MIN);
-    setMaxPrice(PRICE_MAX);
+    setMinPrice(0);
+    setMaxPrice(0);
     setLandmarks(new Set());
-    setMaxDistance(50);
+    setMaxDistanceMeters(0);
   };
 
   const openDetails = (room: Room) => setSelectedRoom(room);
@@ -307,11 +328,20 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
     if (room.distance !== undefined && room.distance !== null && !isNaN(room.distance)) {
       return room.distance;
     }
-    if (userLoc && room.latitude !== undefined && room.longitude !== undefined) {
-      const d = calculateHaversineDistance(userLoc.latitude, userLoc.longitude, room.latitude, room.longitude);
-      if (d !== null) return d;
+    const tenantLat = userLoc?.latitude ?? 27.6938;
+    const tenantLng = userLoc?.longitude ?? 85.3331;
+
+    let rLat = room.latitude;
+    let rLng = room.longitude;
+
+    if (!rLat || !rLng) {
+      const coords = LOCATION_COORDS[room.location] || LOCATION_COORDS[room.city] || { lat: 27.7172, lng: 85.3240 };
+      rLat = coords.lat;
+      rLng = coords.lng;
     }
-    return 999999;
+
+    const d = calculateHaversineDistance(tenantLat, tenantLng, rLat, rLng);
+    return d !== null ? d : 0;
   };
 
   const getRoomPopularity = (room: Room): number => {
@@ -335,7 +365,11 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
           r.city.toLowerCase().includes(query.toLowerCase());
         const matchesType = roomType === "All" || r.roomType === roomType;
         const matchesAvailable = !availableNow || r.status === "AVAILABLE";
-        const matchesPrice = r.price >= minPrice && r.price <= maxPrice;
+        const matchesPrice =
+          (minPrice > 0 ? r.price >= minPrice : true) &&
+          (maxPrice > 0 ? r.price <= maxPrice : true);
+        const matchesDistance =
+          maxDistanceMeters === 0 || (getRoomDistance(r) * 1000) <= maxDistanceMeters;
         const matchesLandmark =
           landmarks.size === 0 ||
           [...landmarks].some(
@@ -345,7 +379,15 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
           );
         const roomAmenityNames = (r.roomAmenities || []).map((ra) => ra.amenity.name);
         const matchesAmenities = [...amenities].every((a) => roomAmenityNames.includes(a));
-        return matchesQuery && matchesType && matchesAvailable && matchesPrice && matchesLandmark && matchesAmenities;
+        return (
+          matchesQuery &&
+          matchesType &&
+          matchesAvailable &&
+          matchesPrice &&
+          matchesDistance &&
+          matchesLandmark &&
+          matchesAmenities
+        );
       });
     }
 
@@ -377,12 +419,13 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
       }
       return [...list].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     }
-  }, [rooms, query, roomType, availableNow, minPrice, maxPrice, landmarks, amenities, sort, usingRecommendations, recommendations, recommendationMap, userLoc]);
+  }, [rooms, query, roomType, availableNow, minPrice, maxPrice, landmarks, amenities, sort, usingRecommendations, recommendations, recommendationMap, userLoc, maxDistanceMeters]);
 
   const activeFilterCount =
     (roomType !== "All" ? 1 : 0) +
     (availableNow ? 1 : 0) +
-    (minPrice !== PRICE_MIN || maxPrice !== PRICE_MAX ? 1 : 0) +
+    (minPrice > 0 || maxPrice > 0 ? 1 : 0) +
+    (maxDistanceMeters > 0 ? 1 : 0) +
     landmarks.size +
     amenities.size;
 
@@ -474,44 +517,74 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                 </div>
               </div>
 
-              <label className="mb-5 flex items-center justify-between text-sm">
-                <span className="text-stone-600">Available Now</span>
+              <div className="mb-5 flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+                <div>
+                  <span className="text-xs font-semibold text-stone-800">Available Now</span>
+                  <p className="text-[11px] text-stone-500">Only rooms ready for move-in</p>
+                </div>
                 <button
+                  type="button"
                   onClick={() => setAvailableNow((v) => !v)}
-                  className={`relative h-5 w-9 rounded-full transition-colors ${availableNow ? "bg-blue-600" : "bg-stone-200"}`}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    availableNow ? "bg-emerald-600" : "bg-stone-300"
+                  }`}
+                  aria-label="Toggle Available Now filter"
                 >
                   <span
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                      availableNow ? "translate-x-4" : "translate-x-0.5"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      availableNow ? "translate-x-5" : "translate-x-0"
                     }`}
                   />
                 </button>
-              </label>
+              </div>
 
               <div className="mb-5">
-                <p className="mb-2 text-xs font-medium text-stone-500">Price Range (NPR)</p>
-                <div className="flex items-center justify-between text-xs text-stone-500">
-                  <span>NPR {minPrice.toLocaleString()}</span>
-                  <span>NPR {maxPrice.toLocaleString()}</span>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-medium text-stone-500">Price Range (NPR)</p>
+                  <span className="text-[11px] text-stone-400">No Limit</span>
                 </div>
-                <input
-                  type="range"
-                  min={PRICE_MIN}
-                  max={PRICE_MAX}
-                  step={500}
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(Math.min(Number(e.target.value), maxPrice))}
-                  className="mt-1 w-full accent-blue-600"
-                />
-                <input
-                  type="range"
-                  min={PRICE_MIN}
-                  max={PRICE_MAX}
-                  step={500}
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(Math.max(Number(e.target.value), minPrice))}
-                  className="mt-1 w-full accent-blue-600"
-                />
+                
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase text-stone-400">Min Price</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-2 text-xs text-stone-400">Rs.</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={500}
+                        value={minPrice || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Number(e.target.value);
+                          setMinPrice(isNaN(val) ? 0 : Math.max(0, val));
+                        }}
+                        className="w-full rounded-lg border border-stone-200 bg-white py-1.5 pl-8 pr-2 text-xs font-semibold text-stone-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                  <span className="mt-4 text-xs font-medium text-stone-400">-</span>
+
+                  <div className="flex-1">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase text-stone-400">Max Price</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-2 text-xs text-stone-400">Rs.</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={500}
+                        value={maxPrice || ""}
+                        placeholder="No limit"
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Number(e.target.value);
+                          setMaxPrice(isNaN(val) ? 0 : Math.max(0, val));
+                        }}
+                        className="w-full rounded-lg border border-stone-200 bg-white py-1.5 pl-8 pr-2 text-xs font-semibold text-stone-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="mb-5">
@@ -520,6 +593,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                   {ROOM_TYPES.map((t) => (
                     <button
                       key={t.value}
+                      type="button"
                       onClick={() => setRoomType(roomType === t.value ? "All" : t.value)}
                       className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
                         roomType === t.value ? "border-blue-600 text-blue-600" : "border-stone-200 text-stone-600 hover:bg-stone-50"
@@ -535,7 +609,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                 <p className="mb-2 text-xs font-medium text-stone-500">Amenities</p>
                 <div className="flex flex-col gap-1.5">
                   {AMENITY_OPTIONS.map((a) => (
-                    <label key={a} className="flex items-center gap-2 text-xs text-stone-600">
+                    <label key={a} className="flex cursor-pointer items-center gap-2 text-xs text-stone-600 hover:text-stone-900">
                       <input
                         type="checkbox"
                         checked={amenities.has(a)}
@@ -549,19 +623,60 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
               </div>
 
               <div className="mb-5">
-                <p className="mb-1 text-xs font-medium text-stone-500">Max Distance Radius (Haversine)</p>
-                <div className="flex items-center justify-between text-xs text-stone-600 mb-1">
-                  <span>Within {maxDistance} km</span>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <p className="text-xs font-medium text-stone-500">Max Distance Radius</p>
+                  <span className="text-xs font-semibold text-stone-800">
+                    {maxDistanceMeters > 0 ? `${maxDistanceMeters.toLocaleString()} m` : "Any Distance"}
+                  </span>
                 </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={maxDistance}
-                  onChange={(e) => setMaxDistance(Number(e.target.value))}
-                  className="w-full accent-blue-600"
-                />
+                
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={maxDistanceMeters || ""}
+                      placeholder="e.g. 2000 (meters)"
+                      onChange={(e) => {
+                        const val = e.target.value === "" ? 0 : Number(e.target.value);
+                        setMaxDistanceMeters(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      className="w-full rounded-lg border border-stone-200 bg-white py-1.5 px-3 text-xs font-semibold text-stone-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                    />
+                  </div>
+                  <span className="text-xs font-medium text-stone-500">meters</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { label: "500m", value: 500 },
+                    { label: "1km", value: 1000 },
+                    { label: "2.5km", value: 2500 },
+                    { label: "5km", value: 5000 },
+                    { label: "10km", value: 10000 },
+                    { label: "Any", value: 0 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setMaxDistanceMeters(preset.value)}
+                      className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        maxDistanceMeters === preset.value
+                          ? "bg-blue-600 text-white"
+                          : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {maxDistanceMeters > 0 && (
+                  <p className="mt-1.5 text-[11px] text-stone-500">
+                    Within {(maxDistanceMeters / 1000).toFixed(1)} km from your location
+                  </p>
+                )}
               </div>
 
               <div className="mb-4 lg:mb-0">

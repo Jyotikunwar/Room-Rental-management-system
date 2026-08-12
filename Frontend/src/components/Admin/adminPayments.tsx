@@ -80,7 +80,7 @@ const EMPTY_STATS: AdminPaymentStats = {
   overdueInvoices: 0,
 };
 
-export default function AdminPayments({ user, onLogout, activeRoute, onNavigate }: AdminPaymentsProps) {
+export default function AdminPayments({ user: _user, onLogout, activeRoute, onNavigate }: AdminPaymentsProps) {
   const [transactions, setTransactions] = useState<AdminPaymentTransaction[]>([]);
   const [stats, setStats] = useState<AdminPaymentStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);

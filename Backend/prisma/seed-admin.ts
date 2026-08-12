@@ -11,18 +11,19 @@ async function main() {
   console.log("Seed script started...");
   console.log("DATABASE_URL loaded:", process.env.DATABASE_URL ? "yes" : "NO - .env not found!");
 
-  const adminEmail = "admin@roomrental.com";
-  const adminPassword = "Admin@12345"; // change this before running in production
+  const adminEmail = "admin.horizon@gmail.com";
+  const adminPassword = "Admin@12345";
 
   const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { password: hashedPassword, role: "ADMIN" },
+    update: { password: hashedPassword, role: "ADMIN", phone: "9800000000" },
     create: {
-      fullName: "System Admin",
+      fullName: "Horizon System Administrator",
       email: adminEmail,
       password: hashedPassword,
+      phone: "9800000000",
       role: "ADMIN",
     },
   });

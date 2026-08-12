@@ -1196,19 +1196,6 @@ getPublicTestimonials: async () => {
     });
     return res.json();
   },
-  getAdminPayments: async (params?: Record<string, string>) => {
-    const query = params ? "?" + new URLSearchParams(params).toString() : "";
-    const res = await fetch(`${API_BASE_URL}/admin/payments${query}`, {
-      headers: getAuthHeaders(),
-    });
-    return res.json();
-  },
-  getAdminPaymentStats: async () => {
-    const res = await fetch(`${API_BASE_URL}/admin/payments/stats`, {
-      headers: getAuthHeaders(),
-    });
-    return res.json();
-  },
   updateAdminPaymentStatus: async (id: number, status: string) => {
     const res = await fetch(`${API_BASE_URL}/admin/payments/${id}/status`, {
       method: "PATCH",

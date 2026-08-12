@@ -17,7 +17,6 @@ import {
   RotateCcw,
   ArrowRight,
   Activity,
-  FileText,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
