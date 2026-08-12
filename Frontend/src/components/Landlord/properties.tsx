@@ -69,6 +69,7 @@ type PropertyForm = {
   latitude: number | null;
   longitude: number | null;
   amenities: string[];
+  furnishedDetails: string;
   status: Room["status"];
 };
 
@@ -80,6 +81,7 @@ const EMPTY_FORM: PropertyForm = {
   latitude: null,
   longitude: null,
   amenities: [],
+  furnishedDetails: "",
   status: "AVAILABLE",
 };
 
@@ -211,6 +213,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
       latitude: (room as any).latitude ?? null,
       longitude: (room as any).longitude ?? null,
       amenities: (room.roomAmenities || []).map((ra) => ra.amenity.name),
+      furnishedDetails: room.furnishedDetails || "",
       status: room.status,
     });
   }
@@ -258,6 +261,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
         latitude: editForm.latitude ?? undefined,
         longitude: editForm.longitude ?? undefined,
         amenities: editForm.amenities,
+        furnishedDetails: editForm.furnishedDetails || undefined,
         status: editForm.status,
       });
       if (res.success && editNewFiles.length > 0) {
@@ -326,6 +330,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
         latitude: form.latitude ?? undefined,
         longitude: form.longitude ?? undefined,
         amenities: form.amenities,
+        furnishedDetails: form.furnishedDetails || undefined,
         status: form.status,
       });
       if (res.success && pickedFiles.length > 0 && res.room?.id) {
@@ -674,6 +679,17 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                 </div>
 
                 <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Included Furnitures &amp; Furnishings</label>
+                  <input
+                    type="text"
+                    value={editForm.furnishedDetails}
+                    onChange={(e) => setEditForm((f) => ({ ...f, furnishedDetails: e.target.value }))}
+                    placeholder="e.g. Double Bed, Wardrobe, Study Table, Sofa, Dining Table"
+                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
+                  />
+                </div>
+
+                <div>
                   <label className="mb-2 block text-xs font-medium text-gray-600">Property Pictures</label>
                   <div className="flex flex-wrap gap-3">
                     {(rooms.find((r) => r.id === editingRoomId)?.roomImages || []).map((img) => (
@@ -784,6 +800,17 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Included Furnitures &amp; Furnishings</label>
+                <input
+                  type="text"
+                  value={form.furnishedDetails}
+                  onChange={(e) => setForm((f) => ({ ...f, furnishedDetails: e.target.value }))}
+                  placeholder="e.g. Double Bed, Wardrobe, Study Table, Sofa, Dining Table"
+                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900"
+                />
               </div>
 
               <div>

@@ -134,6 +134,8 @@ model Room {
   status         RoomStatus         @default(AVAILABLE)
   approvalStatus RoomApprovalStatus @default(APPROVED)
 
+  furnishedDetails String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

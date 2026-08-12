@@ -44,7 +44,63 @@ const AMENITY_OPTIONS = [
   "Fully Furnished",
   "Pet Friendly",
 ];
-const LANDMARKS = ["College", "Hospital", "Main Road"];
+const LANDMARKS = [
+  "College / University",
+  "Hospital / Clinic",
+  "Main Road",
+  "Bus Stop",
+  "Market / Supermarket",
+  "Park / Garden",
+  "Bank / ATM",
+  "Airport",
+];
+
+const LANDMARK_KEYWORDS_MAP: Record<string, string[]> = {
+  "College / University": ["college", "university", "campus", "school", "academy", "institute"],
+  "Hospital / Clinic": ["hospital", "clinic", "health", "medical", "pharmacy", "nursing"],
+  "Main Road": ["main road", "highway", "chowk", "marg", "plaza", "avenue", "road"],
+  "Bus Stop": ["bus stop", "bus station", "bus park", "micro stop", "tempo stop", "transit", "station"],
+  "Market / Supermarket": ["market", "supermarket", "mart", "bazaar", "saleways", "shopping", "store", "mall"],
+  "Park / Garden": ["park", "garden", "lake", "lakeside", "greenery"],
+  "Bank / ATM": ["bank", "atm", "nabil", "nrb"],
+  Airport: ["airport", "aerodrome", "tia"],
+};
+
+const LOCATION_LANDMARKS_MAP: Record<string, string[]> = {
+  Baneshwor: ["College / University", "Hospital / Clinic", "Main Road", "Bank / ATM", "Market / Supermarket"],
+  Kirtipur: ["College / University", "Hospital / Clinic", "Main Road", "Bus Stop"],
+  Thamel: ["Market / Supermarket", "Main Road", "Park / Garden", "Bank / ATM"],
+  Chabahil: ["College / University", "Hospital / Clinic", "Main Road", "Market / Supermarket"],
+  Kalanki: ["Main Road", "Bus Stop", "Hospital / Clinic"],
+  Patan: ["Hospital / Clinic", "College / University", "Market / Supermarket", "Bank / ATM"],
+  Jawalakhel: ["Park / Garden", "College / University", "Hospital / Clinic", "Main Road"],
+  Kupondole: ["College / University", "Main Road", "Park / Garden"],
+  Satdobato: ["Main Road", "Bus Stop", "Market / Supermarket"],
+  Suryabinayak: ["Hospital / Clinic", "Main Road", "Bus Stop"],
+  Thimi: ["Hospital / Clinic", "Market / Supermarket"],
+  Lakeside: ["Park / Garden", "Market / Supermarket", "Airport", "Main Road"],
+  Birauta: ["Bus Stop", "Main Road", "Hospital / Clinic"],
+  Mahendrapool: ["Market / Supermarket", "College / University", "Bank / ATM"],
+  Kathmandu: ["College / University", "Hospital / Clinic", "Main Road", "Market / Supermarket"],
+  Lalitpur: ["College / University", "Hospital / Clinic", "Main Road", "Park / Garden"],
+  Bhaktapur: ["Hospital / Clinic", "Main Road", "Bus Stop"],
+  Pokhara: ["Park / Garden", "Market / Supermarket", "Main Road", "Airport"],
+};
+
+function isRoomNearLandmark(room: Room, selectedLandmark: string): boolean {
+  // 1. Check direct neighborhood mapping
+  const mapped = LOCATION_LANDMARKS_MAP[room.location] || LOCATION_LANDMARKS_MAP[room.city] || [];
+  if (mapped.includes(selectedLandmark)) return true;
+
+  // 2. Check keyword aliases in room text fields
+  const roomText = `${room.title} ${room.description || ""} ${room.location} ${(room as any).address || ""} ${room.city}`.toLowerCase();
+  const keywords = LANDMARK_KEYWORDS_MAP[selectedLandmark] || [selectedLandmark.toLowerCase()];
+  return keywords.some((kw) => roomText.includes(kw));
+}
+
+function getRoomNearbyLandmarks(room: Room): string[] {
+  return LANDMARKS.filter((l) => isRoomNearLandmark(room, l));
+}
 const LOCATION_COORDS: Record<string, { lat: number; lng: number }> = {
   Baneshwor: { lat: 27.6938, lng: 85.3331 },
   Kirtipur: { lat: 27.6792, lng: 85.2754 },
@@ -372,11 +428,7 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
           maxDistanceMeters === 0 || (getRoomDistance(r) * 1000) <= maxDistanceMeters;
         const matchesLandmark =
           landmarks.size === 0 ||
-          [...landmarks].some(
-            (l) =>
-              r.location.toLowerCase().includes(l.toLowerCase()) ||
-              (r as any).address?.toLowerCase().includes(l.toLowerCase())
-          );
+          [...landmarks].every((selectedLandmark) => isRoomNearLandmark(r, selectedLandmark));
         const roomAmenityNames = (r.roomAmenities || []).map((ra) => ra.amenity.name);
         const matchesAmenities = [...amenities].every((a) => roomAmenityNames.includes(a));
         return (
@@ -680,14 +732,28 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
               </div>
 
               <div className="mb-4 lg:mb-0">
-                <p className="mb-2 text-xs font-medium text-stone-500">Near Landmark (select one or more)</p>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-medium text-stone-500">Near Landmark (select one or more)</p>
+                  {landmarks.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLandmarks(new Set())}
+                      className="text-[11px] font-medium text-blue-600 hover:underline"
+                    >
+                      Clear ({landmarks.size})
+                    </button>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {LANDMARKS.map((l) => (
                     <button
                       key={l}
+                      type="button"
                       onClick={() => toggleLandmark(l)}
                       className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                        landmarks.has(l) ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                        landmarks.has(l)
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "bg-stone-100 text-stone-600 hover:bg-stone-200"
                       }`}
                     >
                       {l}
@@ -859,6 +925,17 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                               {amenityNames.slice(0, 3).map((a) => (
                                 <span key={a} className="rounded-md bg-stone-100 px-2 py-0.5 text-[10px] text-stone-500">
                                   {a}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {getRoomNearbyLandmarks(room).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-emerald-700">
+                              <span className="font-medium text-emerald-800">Near:</span>
+                              {getRoomNearbyLandmarks(room).slice(0, 2).map((l) => (
+                                <span key={l} className="rounded-md bg-emerald-50 px-1.5 py-0.5 border border-emerald-100 font-medium">
+                                  {l}
                                 </span>
                               ))}
                             </div>

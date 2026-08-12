@@ -308,6 +308,7 @@ async function main() {
       securityDeposit: 8500,
       status: RoomStatus.BOOKED,
       approvalStatus: RoomApprovalStatus.APPROVED,
+      furnishedDetails: "Single Bed, Clothes Wardrobe, Study Table, Ergonomic Chair, Bookshelf",
       roomImages: {
         create: [
           { imageUrl: ROOM_IMAGES[0], isPrimary: true },
@@ -341,6 +342,7 @@ async function main() {
       securityDeposit: 10000,
       status: RoomStatus.AVAILABLE,
       approvalStatus: RoomApprovalStatus.APPROVED,
+      furnishedDetails: "Queen Bed, Wardrobe, Side Table, Study Desk, Mirror",
       roomImages: {
         create: [
           { imageUrl: ROOM_IMAGES[1], isPrimary: true },
@@ -373,6 +375,7 @@ async function main() {
       securityDeposit: 45000,
       status: RoomStatus.AVAILABLE,
       approvalStatus: RoomApprovalStatus.APPROVED,
+      furnishedDetails: "3-Piece Sofa Set, King Size Bed, 6-Seater Dining Table, Modern Kitchen Cabinet, AC Unit",
       roomImages: {
         create: [
           { imageUrl: ROOM_IMAGES[3], isPrimary: true },
@@ -451,6 +454,7 @@ async function main() {
         securityDeposit: price,
         status: RoomStatus.AVAILABLE,
         approvalStatus: approval,
+        furnishedDetails: i % 2 === 0 ? "Double Bed, Wardrobe, Study Desk, Sofa Chair" : undefined,
         roomImages: {
           create: [
             { imageUrl: mainImg, isPrimary: true },

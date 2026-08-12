@@ -13,9 +13,10 @@ export const createRoomSchema = z.object({
   securityDeposit: z.number().nonnegative().optional(),
   availableFrom: z.string().optional(), // ISO date string from frontend
   status: z.enum(["AVAILABLE", "BOOKED", "UNDER_MAINTENANCE"]).optional(),
-  // Frontend (properties.tsx) sends amenity NAMES (e.g. "WiFi", "Parking"),
+  // Frontend sends amenity NAMES (e.g. "WiFi", "Parking"),
   // not numeric ids — the controller resolves/creates Amenity rows by name.
   amenities: z.array(z.string()).optional(),
+  furnishedDetails: z.string().optional(),
 });
 
 export const updateRoomSchema = createRoomSchema.partial();

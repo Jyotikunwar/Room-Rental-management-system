@@ -106,6 +106,30 @@ export default function RoomDetailsModal({
               </div>
             )}
 
+            {room.furnishedDetails && (
+              <div className="mb-4 rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+                <p className="mb-1 text-xs font-semibold text-stone-700">🛋️ Included Furnishings &amp; Furniture</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {room.furnishedDetails.split(",").map((item, idx) => (
+                    <span key={idx} className="rounded-md border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 shadow-2xs">
+                      {item.trim()}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-stone-500">Nearby Landmarks</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["College / University", "Hospital / Clinic", "Main Road", "Bus Stop", "Market / Supermarket", "Park / Garden", "Bank / ATM"].map((l) => (
+                  <span key={l} className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 border border-blue-100">
+                    📍 {l}
+                  </span>
+                ))}
+              </div>
+            </div>
+
             {room.landlord && (
               <div className="mb-4 rounded-xl border border-stone-200 p-3">
                 <p className="mb-1 text-xs font-medium text-stone-500">Landlord</p>

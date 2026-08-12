@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Bell,
-  Plus,
   Star,
   ThumbsUp,
   ThumbsDown,
@@ -66,7 +65,7 @@ function StarRow({ rating, size = 13 }: { rating: number; size?: number }) {
   );
 }
 
-export default function AdminReviews({ onLogout, activeRoute, onNavigate, onAddProperty }: AdminReviewsProps) {
+export default function AdminReviews({ onLogout, activeRoute, onNavigate, onAddProperty: _onAddProperty }: AdminReviewsProps) {
   const [reviews, setReviews] = useState<AdminReviewEntry[]>([]);
   const [stats, setStats] = useState<AdminReviewStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);

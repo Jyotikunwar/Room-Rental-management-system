@@ -9,7 +9,6 @@ import {
   Check,
   Search,
   Bell,
-  Plus,
   X,
   Server,
   ToggleLeft,
@@ -44,7 +43,7 @@ export default function AdminSettings({
   activeRoute,
   onNavigate,
   onUserUpdate,
-  onAddProperty,
+  onAddProperty: _onAddProperty,
 }: AdminSettingsProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 

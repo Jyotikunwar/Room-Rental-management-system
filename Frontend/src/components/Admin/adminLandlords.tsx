@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Bell,
-  UserPlus,
   ChevronDown,
   Mail,
   Phone,
@@ -85,7 +84,7 @@ function timeAgo(dateStr?: string) {
   return `${days}d ago`;
 }
 
-export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAddLandlord }: AdminLandlordsProps) {
+export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAddLandlord: _onAddLandlord }: AdminLandlordsProps) {
   const [landlords, setLandlords] = useState<LandlordProfile[]>([]);
   const [stats, setStats] = useState<LandlordDirectoryStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);

@@ -626,6 +626,7 @@ function EditPropertyModal({
   const [city, setCity] = useState(room.city || "");
   const [location, setLocation] = useState(room.location || "");
   const [description, setDescription] = useState(room.description || "");
+  const [furnishedDetails, setFurnishedDetails] = useState(room.furnishedDetails || "");
   const [status, setStatus] = useState<Room["status"]>(room.status || "AVAILABLE");
   
   const [saving, setSaving] = useState(false);
@@ -641,6 +642,7 @@ function EditPropertyModal({
         city: city.trim(),
         location: location.trim(),
         description: description.trim() || undefined,
+        furnishedDetails: furnishedDetails.trim() || undefined,
         status,
       });
     } finally {
@@ -774,6 +776,19 @@ function EditPropertyModal({
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 p-3 text-sm outline-none focus:border-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Included Furnitures &amp; Furnishings
+              </label>
+              <input
+                type="text"
+                value={furnishedDetails}
+                onChange={(e) => setFurnishedDetails(e.target.value)}
+                placeholder="e.g. Double Bed, Wardrobe, Study Table, Sofa, Dining Set"
+                className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900"
               />
             </div>
 

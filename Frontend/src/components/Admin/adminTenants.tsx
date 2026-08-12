@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search,
   Bell,
-  UserPlus,
   ChevronDown,
   Mail,
   Phone,
@@ -67,7 +66,7 @@ function tenantDisplayId(tenantId: number) {
   return `T-${(4000 + tenantId).toString().padStart(4, "0")}`;
 }
 
-export default function AdminTenants({ onLogout, activeRoute, onNavigate, onAddTenant }: AdminTenantsProps) {
+export default function AdminTenants({ onLogout, activeRoute, onNavigate, onAddTenant: _onAddTenant }: AdminTenantsProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [stats, setStats] = useState<TenantStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);

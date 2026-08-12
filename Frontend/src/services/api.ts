@@ -80,6 +80,7 @@ export interface Room {
   availableFrom?: string;
   status: "AVAILABLE" | "BOOKED" | "UNDER_MAINTENANCE";
   approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  furnishedDetails?: string;
   createdAt?: string;
   roomImages?: RoomImage[];
   roomAmenities?: { amenity: Amenity }[];
