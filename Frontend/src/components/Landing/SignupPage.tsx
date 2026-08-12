@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { z } from "zod";
 
 import { FormField } from "./LoginPage";
 import {
@@ -28,42 +27,59 @@ interface SignupPageProps {
   onNavigateToLogin?: () => void;
 }
 
-// Mirrors the backend's Zod signup schema (fullName, email, password rules)
-// plus the extra client-only fields (confirmPassword, agreedToTerms) that
-// never get sent to the API but still need validating before submit.
-const signupSchema = z
-  .object({
-    fullName: z.string().trim().min(5, "Full name must be at least 5 characters"),
-    email: z
-      .string()
-      .trim()
-      .min(1, "Email is required")
-      .email("Enter a valid email address")
-      .endsWith("@gmail.com", "Email must end with @gmail.com"),
-
-    phone: z
-      .string()
-      .trim()
-      .regex(/^[0-9]{10}$/, "Phone number must be exactly 10 digits"),
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[0-9]/, "Password must contain at least one number")
-      .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
-    confirmPassword: z.string().min(1, "Please confirm your password"),
-    role: z.enum(["TENANT", "LANDLORD"]),
-    agreedToTerms: z.literal(true, {
-      message: "You must agree to the Terms of Service to continue",
-    }),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ["confirmPassword"],
-  });
-
-type SignupFormValues = z.infer<typeof signupSchema>;
+type SignupFormValues = {
+  fullName: string;
+  email: string;
+  phone: string;
+  password: string;
+  confirmPassword: string;
+  role: UserRole;
+  agreedToTerms: boolean;
+};
 type FieldErrors = Partial<Record<keyof SignupFormValues, string>>;
+
+function validateSignup(values: SignupFormValues): FieldErrors {
+  const errors: FieldErrors = {};
+
+  if (values.fullName.trim().length < 5) {
+    errors.fullName = "Full name must be at least 5 characters";
+  }
+
+  const email = values.email.trim();
+  if (!email) {
+    errors.email = "Email is required";
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = "Enter a valid email address";
+  } else if (!email.endsWith("@gmail.com")) {
+    errors.email = "Email must end with @gmail.com";
+  }
+
+  if (!/^[0-9]{10}$/.test(values.phone.trim())) {
+    errors.phone = "Phone number must be exactly 10 digits";
+  }
+
+  if (values.password.length < 8) {
+    errors.password = "Password must be at least 8 characters";
+  } else if (!/[A-Z]/.test(values.password)) {
+    errors.password = "Password must contain at least one uppercase letter";
+  } else if (!/[0-9]/.test(values.password)) {
+    errors.password = "Password must contain at least one number";
+  } else if (!/[^A-Za-z0-9]/.test(values.password)) {
+    errors.password = "Password must contain at least one special character";
+  }
+
+  if (!values.confirmPassword) {
+    errors.confirmPassword = "Please confirm your password";
+  } else if (values.password !== values.confirmPassword) {
+    errors.confirmPassword = "Passwords don't match";
+  }
+
+  if (!values.agreedToTerms) {
+    errors.agreedToTerms = "You must agree to the Terms of Service to continue";
+  }
+
+  return errors;
+}
 
 export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPageProps) {
   const [fullName, setFullName] = useState("");
@@ -83,7 +99,7 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
     setError(null);
     setFieldErrors({});
 
-    const result = signupSchema.safeParse({
+    const values: SignupFormValues = {
       fullName,
       email,
       phone,
@@ -91,14 +107,10 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
       confirmPassword,
       role,
       agreedToTerms,
-    });
+    };
 
-    if (!result.success) {
-      const errors: FieldErrors = {};
-      for (const issue of result.error.issues) {
-        const key = issue.path[0] as keyof SignupFormValues;
-        if (!errors[key]) errors[key] = issue.message;
-      }
+    const errors = validateSignup(values);
+    if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       return;
     }
@@ -106,11 +118,11 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
     setLoading(true);
     try {
       await onSignup({
-        fullName: result.data.fullName,
-        email: result.data.email,
-        phone: result.data.phone,
-        password: result.data.password,
-        role: result.data.role,
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password,
+        role,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't create your account. Please try again.");
