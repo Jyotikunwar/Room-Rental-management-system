@@ -32,6 +32,7 @@ export interface User {
   phone?: string;
   role: "TENANT" | "LANDLORD" | "ADMIN";
   avatarUrl?: string;
+  isActive?: boolean;
 }
 
 export interface Amenity {
@@ -303,8 +304,7 @@ export interface LandlordActivityEntry {
   createdAt: string;
 }
 
-// NOTE: still not built — unified admin inbox needs new tables for online
-// presence and merged thread grouping on top of your Message model.
+// NOTE: Admin inbox backed by Message model + admin-only routes.
 export interface AdminMessageThread {
   contactId: number;
   contactName: string;
@@ -314,6 +314,7 @@ export interface AdminMessageThread {
   lastMessageAt: string;
   unread: boolean;
   avatarUrl?: string;
+  phone?: string;
 }
 
 export interface AdminThreadMessage {
@@ -333,6 +334,16 @@ export interface AdminContactProfile {
   avatarUrl?: string;
   property?: { title: string; leaseEndDate?: string };
   recentActivity?: { title: string; date: string }[];
+}
+
+export interface AdminMessageContact {
+  id: number;
+  fullName: string;
+  role: "TENANT" | "LANDLORD";
+  email: string;
+  phone?: string;
+  avatarUrl?: string;
+  isOnline?: boolean;
 }
 
 // NOTE: still not built — Landlord/Tenant "reviews" as separate target
@@ -688,9 +699,15 @@ export const api = {
     });
     return res.json();
   },
-  getAdminBookings: async (params?: Record<string, any>) => {
+  getAdminBookings: async (params?: Record<string, string>) => {
     const query = new URLSearchParams(params).toString();
     const res = await fetch(`${API_BASE_URL}/admin/bookings?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminTenantStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/tenants/stats`, {
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -709,8 +726,31 @@ export const api = {
     return res.json();
   },
   getAdminMaintenanceRequests: async (params?: Record<string, any>) => {
-    const query = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE_URL}/admin/complaints?${query}`, {
+    const query = params ? "?" + new URLSearchParams(params).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/admin/complaints${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  createAdminMaintenanceTicket: async (data: { bookingId: number; title: string; description: string; status?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  updateAdminMaintenanceStatus: async (id: number, status: string) => {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    return res.json();
+  },
+  deleteAdminMaintenanceTicket: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints/${id}`, {
+      method: "DELETE",
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -725,6 +765,11 @@ export const api = {
   },
   getAdminMessageThreads: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/messages/threads`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  getAdminMessageContacts: async (params?: { search?: string; role?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/messages/contacts?${query}`, { headers: getAuthHeaders() });
     return res.json();
   },
   getAdminThreadMessages: async (contactId: number) => {
@@ -743,9 +788,9 @@ export const api = {
     });
     return res.json();
   },
-  getAdminActivity: async (params?: { category?: string; page?: number; limit?: number }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await fetch(`${API_BASE_URL}/admin/activity?${query}`, {
+  getAdminActivity: async (params?: { category?: string; search?: string; page?: number; limit?: number }) => {
+    const query = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/admin/activity${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -1106,6 +1151,57 @@ getPublicTestimonials: async () => {
   updateLandlordProfile: async (id: number, data: { fullName?: string; phone?: string }) => {
     const res = await fetch(`${API_BASE_URL}/admin/landlords/${id}`, {
       method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  toggleTenantStatus: async (id: number, isActive: boolean) => {
+    const res = await fetch(`${API_BASE_URL}/admin/tenants/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ isActive }),
+    });
+    return res.json();
+  },
+  updateTenantProfile: async (id: number, data: { fullName?: string; phone?: string; email?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/tenants/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  getAdminPayments: async (params?: Record<string, string>) => {
+    const query = params ? "?" + new URLSearchParams(params).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/admin/payments${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminPaymentStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/payments/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updateAdminPaymentStatus: async (id: number, status: string) => {
+    const res = await fetch(`${API_BASE_URL}/admin/payments/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    return res.json();
+  },
+  createAdminPayment: async (data: {
+    bookingId: number;
+    amount: number;
+    paymentMethod?: string;
+    status?: string;
+    transactionId?: string;
+  }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/payments`, {
+      method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });

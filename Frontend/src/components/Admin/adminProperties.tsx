@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Search, Bell, LayoutGrid, List, MapPin, Trash2,
-  Loader2, X, Building2, CheckCircle, XCircle, Clock, Check, RefreshCw, Pencil
+  Loader2, X, Building2, CheckCircle, XCircle, Clock, Check, RefreshCw, Pencil, MessageSquare
 } from "lucide-react";
 import { api, getImageUrl, type User, type Room } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
 import { filterRoomsMultiCriteria } from "../../utils/multiCriteriaFilter";
+import { openAdminMessage } from "./adminMessages";
 
 interface AdminPropertiesProps {
   user: User;
@@ -165,7 +166,7 @@ export default function AdminProperties({ onLogout, activeRoute, onNavigate }: A
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-slate-50 font-sans">
       <AdminSidebar active={activeRoute} onNavigate={onNavigate} onLogout={onLogout} />
 
       <div className="flex-1">
@@ -431,8 +432,20 @@ export default function AdminProperties({ onLogout, activeRoute, onNavigate }: A
 
                         {/* Landlord */}
                         <td className="px-5 py-4 text-slate-700">
-                          <p className="font-medium text-slate-900">{room.landlord?.fullName || "Landlord"}</p>
-                          <p className="text-xs text-slate-400">{room.landlord?.phone || room.landlord?.email || "—"}</p>
+                          <button
+                            onClick={() => {
+                              openAdminMessage(room.landlordId);
+                              onNavigate("messages");
+                            }}
+                            className="text-left group"
+                            title="Chat with Landlord"
+                          >
+                            <p className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
+                              <span>{room.landlord?.fullName || `Landlord #${room.landlordId}`}</span>
+                              <MessageSquare size={12} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </p>
+                            <p className="text-xs text-slate-400">{room.landlord?.phone || room.landlord?.email || "Click to message"}</p>
+                          </button>
                         </td>
 
                         {/* Type & Rent */}
@@ -451,6 +464,19 @@ export default function AdminProperties({ onLogout, activeRoute, onNavigate }: A
                         {/* Action Buttons */}
                         <td className="px-5 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {/* Message Landlord Button */}
+                            <button
+                              onClick={() => {
+                                openAdminMessage(room.landlordId);
+                                onNavigate("messages");
+                              }}
+                              className="flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors"
+                              title="Chat with Landlord"
+                            >
+                              <MessageSquare size={13} />
+                              <span>Message</span>
+                            </button>
+
                             {/* Edit / Review Button */}
                             <button
                               onClick={() => setEditingItem(room)}

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api, type User } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
+import { openAdminMessage } from "./adminMessages";
 
 interface LandlordRoom {
   id: number;
@@ -203,7 +204,7 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-gray-50 font-sans">
       <AdminSidebar active={activeRoute} onNavigate={onNavigate} onLogout={onLogout} />
       <div className="flex-1">
         <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -331,12 +332,18 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
                     </div>
                   )}
 
-                  <div className="mb-3 flex items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-900 text-sm font-semibold text-white">
+                  <div
+                    onClick={() => {
+                      openAdminMessage(l.id);
+                      onNavigate("messages");
+                    }}
+                    className="mb-3 flex items-center gap-3 cursor-pointer group"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-900 text-sm font-semibold text-white group-hover:bg-blue-600 transition-colors shadow-sm">
                       {initials(l.fullName)}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-gray-900">{l.fullName}</p>
+                      <p className="truncate font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{l.fullName}</p>
                       <span className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[l.status]}`}>
                         • {l.status.charAt(0) + l.status.slice(1).toLowerCase()}
                       </span>
@@ -371,11 +378,15 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
                     <p className="text-[10px] text-gray-400">Last active {timeAgo(l.lastActiveAt)}</p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => onNavigate("messages")}
-                        className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50"
+                        onClick={() => {
+                          openAdminMessage(l.id);
+                          onNavigate("messages");
+                        }}
+                        className="flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm"
                         aria-label="Message landlord"
                       >
                         <MessageSquare size={13} />
+                        <span>Message</span>
                       </button>
                       <button
                         onClick={() => openEdit(l)}
@@ -418,6 +429,29 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
               <h3 className="text-sm font-semibold text-gray-900">{detailsLandlord.fullName}'s Portfolio</h3>
               <button onClick={() => setDetailsLandlord(null)} className="text-gray-400 hover:text-gray-600">
                 <X size={18} />
+              </button>
+            </div>
+
+            <div className="mb-4 flex items-center justify-between rounded-xl bg-blue-50/70 p-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">
+                  {initials(detailsLandlord.fullName)}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-900">{detailsLandlord.fullName}</p>
+                  <p className="text-[11px] text-gray-500">{detailsLandlord.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setDetailsLandlord(null);
+                  openAdminMessage(detailsLandlord.id);
+                  onNavigate("messages");
+                }}
+                className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
+              >
+                <MessageSquare size={13} />
+                <span>Send Message</span>
               </button>
             </div>
 

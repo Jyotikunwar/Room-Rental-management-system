@@ -160,7 +160,7 @@ export default function AdminReviews({ onLogout, activeRoute, onNavigate, onAddP
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-gray-50 font-sans">
       <AdminSidebar
         active={activeRoute}
         onNavigate={onNavigate}

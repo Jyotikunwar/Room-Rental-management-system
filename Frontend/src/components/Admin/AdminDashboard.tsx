@@ -219,7 +219,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-gray-50 font-sans">
       <AdminSidebar active={activeRoute} onNavigate={setActiveRoute} onLogout={onLogout} />
       <div className="flex-1">
         <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
