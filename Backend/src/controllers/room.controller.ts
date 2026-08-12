@@ -2,14 +2,11 @@ import { Response } from "express";
 import prisma from "../lib/prisma";
 import { createRoomSchema, updateRoomSchema } from "../validations/room.validation";
 import { AuthRequest } from "../middleware/auth.middleware";
-import {
-  getSimilarRoomRecommendations,
-  roomToVector,
-  preferencesToVector,
-  calculateCosineSimilarity,
-  calculatePopularityScore,
-} from "../services/recommendation.service";
+import { getSimilarRoomRecommendations } from "../services/recommendation.service";
 import { calculateHaversineDistance } from "../utils/haversine";
+import { calculateCosineSimilarity } from "../utils/cosineSimilarity";
+import { calculatePopularityScore } from "../utils/popularityRanking";
+import { roomToVector, preferencesToVector } from "../utils/vectorizer";
 
 // Resolves a list of amenity NAMES (e.g. "WiFi", "Parking") to Amenity row
 // ids, creating any that don't exist yet. Frontend sends names, not ids.

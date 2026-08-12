@@ -17,6 +17,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { api, getImageUrl, type Room, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
+import { filterRoomsMultiCriteria } from "../../utils/multiCriteriaFilter";
+
 
 // Leaflet's default marker icon breaks under most bundlers (webpack/vite)
 // because it references image paths that don't resolve — point it at CDN
@@ -170,14 +172,17 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
   const addresses = useMemo(() => Array.from(new Set(rooms.map((r) => r.location).filter(Boolean))), [rooms]);
 
   const filteredRooms = useMemo(() => {
-    const q = headerSearch.trim().toLowerCase();
-    return rooms.filter((r) => {
-      const matchesQuery = !q || r.title.toLowerCase().includes(q);
-      const matchesType = typeFilter === "ALL" || r.roomType === typeFilter;
-      const matchesAddress = addressFilter === "ALL" || r.location === addressFilter;
-      const matchesStatus = statusFilter === "ALL" || r.status === statusFilter;
-      return matchesQuery && matchesType && matchesAddress && matchesStatus;
+    let list = filterRoomsMultiCriteria(rooms, {
+      query: headerSearch,
+      roomType: typeFilter === "ALL" ? undefined : typeFilter,
     });
+    if (addressFilter !== "ALL") {
+      list = list.filter((r) => r.location === addressFilter);
+    }
+    if (statusFilter !== "ALL") {
+      list = list.filter((r) => r.status === statusFilter);
+    }
+    return list;
   }, [rooms, headerSearch, typeFilter, addressFilter, statusFilter]);
 
   useEffect(() => setPage(1), [headerSearch, typeFilter, addressFilter, statusFilter]);

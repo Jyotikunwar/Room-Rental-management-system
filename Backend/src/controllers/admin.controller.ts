@@ -1,6 +1,9 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { calculatePopularityScore } from "../utils/popularityRanking";
+import { calculateHaversineDistance } from "../utils/haversine";
+import { filterRoomsMultiCriteria } from "../utils/multiCriteriaFilter";
 
 // GET /api/admin/dashboard
 // Powers AdminDashboard.tsx's 10 stat cards — computed straight from

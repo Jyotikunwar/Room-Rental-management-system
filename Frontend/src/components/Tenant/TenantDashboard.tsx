@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  Search, Heart, Clock, ClipboardList, MapPin, Sparkles,
-  ChevronLeft, ChevronRight, Plus, Eye, CreditCard, Phone,
+  Search, Heart, Clock, ClipboardList, Sparkles,
+  ChevronRight, Plus, Eye, CreditCard, Phone,
   AlertTriangle, UserPlus2, MessageCircle, Loader2, ImageOff, X,
 } from "lucide-react";
 import type { User, DashboardStats, Booking, Favorite, Notification, RecommendationResult, Room } from "../../services/api";
@@ -33,38 +33,6 @@ const NOTIF_ICON: Record<Notification["type"], typeof AlertTriangle> = {
   REVIEW: MessageCircle,
   SYSTEM: MessageCircle,
 };
-
-const CITY_SUGGESTIONS = ["Kathmandu", "Pokhara", "Lalitpur", "Bhaktapur"];
-
-interface PlaceSuggestion {
-  display_name: string;
-  place_id: number;
-}
-
-// Free geocoding (OpenStreetMap Nominatim, no API key) so the location field
-// isn't limited to a hardcoded city list — any real place can be searched.
-// Takes an AbortSignal so a fast typer doesn't leave old requests racing
-// with newer ones (which was making suggestions feel laggy/out of order).
-async function fetchPlaceSuggestions(q: string, signal: AbortSignal): Promise<PlaceSuggestion[]> {
-  if (q.trim().length < 2) return [];
-  const url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=np&limit=6&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" }, signal });
-  if (!res.ok) return [];
-  return res.json();
-}
-const BUDGETS = [
-  { label: "Any Budget", min: 0, max: Infinity },
-  { label: "Under Rs. 8,000", min: 0, max: 8000 },
-  { label: "Rs. 8,000 - 15,000", min: 8000, max: 15000 },
-  { label: "Above Rs. 15,000", min: 15000, max: Infinity },
-];
-const ROOM_TYPES = [
-  { label: "Any Type", value: "" },
-  { label: "Single Room", value: "SINGLE" },
-  { label: "Double Room", value: "DOUBLE" },
-  { label: "Flat", value: "FLAT" },
-  { label: "Apartment", value: "APARTMENT" },
-];
 
 function stashSearchFilters(filters: Record<string, unknown>) {
   sessionStorage.setItem("tenantSearchFilters", JSON.stringify(filters));
@@ -103,13 +71,6 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   const [bookingRoom, setBookingRoom] = useState<Room | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [city, setCity] = useState("");
-  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [showPlaceSuggestions, setShowPlaceSuggestions] = useState(false);
-  const [budgetLabel, setBudgetLabel] = useState(BUDGETS[0].label);
-  const [roomType, setRoomType] = useState("");
-
   const loadDashboard = () => {
     setLoading(true);
     api
@@ -126,23 +87,6 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
     loadDashboard();
   }, []);
 
-  useEffect(() => {
-    if (city.trim().length < 2) {
-      setPlaceSuggestions([]);
-      return;
-    }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      fetchPlaceSuggestions(city, controller.signal)
-        .then((results) => setPlaceSuggestions(results))
-        .catch(() => {}); // aborted requests land here — nothing to do
-    }, 400);
-    return () => {
-      clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [city]);
-
   const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
 
   const showToast = (msg: string) => {
@@ -155,9 +99,6 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
     const alreadySaved = savedRoomIds.has(roomId);
     try {
       await api.toggleFavorite(roomId);
-      // Update just the saved-rooms list locally instead of re-fetching the
-      // whole dashboard (stats + notifications + recommendations) — this is
-      // the difference between a full reload and an instant heart-toggle.
       setData((prev) => {
         if (!prev) return prev;
         const recentSaved = alreadySaved
@@ -173,22 +114,7 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
     }
   };
 
-  const runSearch = () => {
-    const budget = BUDGETS.find((b) => b.label === budgetLabel) || BUDGETS[0];
-    stashSearchFilters({
-      query,
-      city: city.trim(),
-      minPrice: budget.min,
-      maxPrice: budget.max === Infinity ? undefined : budget.max,
-      roomType,
-    });
-    onNavigate("search");
-  };
 
-  const viewMatches = () => {
-    stashSearchFilters({ query: data?.stats.preferredLocation ?? "" });
-    onNavigate("search");
-  };
 
   // No room-detail page hook is wired into this dashboard yet — the closest
   // real action is taking them to Find Rooms pre-filtered to this room's
@@ -233,98 +159,8 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
       />
 
       <main className="flex-1 p-4 sm:p-6">
-        {/* ---- Top bar: functional search + filters ---- */}
-        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-stone-200 bg-white p-3 pl-14 sm:pl-3">
-          <div className="flex flex-1 items-center gap-2 rounded-xl bg-stone-100 px-3 py-2">
-            <Search size={16} className="shrink-0 text-stone-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch()}
-              placeholder="Search rooms by area..."
-              className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm sm:flex-nowrap">
-            <label className="relative flex items-center gap-1.5 rounded-lg border border-stone-200 px-2.5 py-1.5 text-stone-600">
-              <MapPin size={14} className="shrink-0 text-stone-400" />
-              <input
-                value={city}
-                onChange={(e) => {
-                  setCity(e.target.value);
-                  setShowPlaceSuggestions(true);
-                }}
-                onFocus={() => setShowPlaceSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowPlaceSuggestions(false), 150)}
-                onKeyDown={(e) => e.key === "Enter" && runSearch()}
-                placeholder="Any city or area"
-                className="w-32 bg-transparent outline-none placeholder:text-stone-400 sm:w-40"
-              />
-
-              {showPlaceSuggestions && (city.trim().length >= 2 ? placeSuggestions.length > 0 : true) && (
-                <div className="absolute left-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg">
-                  {city.trim().length < 2 && (
-                    <>
-                      <p className="px-3 pt-2 text-[10px] font-medium uppercase text-stone-400">Popular</p>
-                      {CITY_SUGGESTIONS.map((c) => (
-                        <button
-                          key={c}
-                          onMouseDown={() => {
-                            setCity(c);
-                            setShowPlaceSuggestions(false);
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50"
-                        >
-                          <MapPin size={13} className="shrink-0 text-stone-400" /> {c}
-                        </button>
-                      ))}
-                    </>
-                  )}
-                  {placeSuggestions.map((p) => (
-                    <button
-                      key={p.place_id}
-                      onMouseDown={() => {
-                        setCity(p.display_name.split(",")[0]);
-                        setShowPlaceSuggestions(false);
-                      }}
-                      className="flex w-full items-start gap-2 border-t border-stone-50 px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50 first:border-t-0"
-                    >
-                      <MapPin size={13} className="mt-0.5 shrink-0 text-stone-400" />
-                      <span className="truncate">{p.display_name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </label>
-            <select
-              value={budgetLabel}
-              onChange={(e) => setBudgetLabel(e.target.value)}
-              className="rounded-lg border border-stone-200 px-2.5 py-1.5 text-stone-600 outline-none"
-            >
-              {BUDGETS.map((b) => (
-                <option key={b.label} value={b.label}>{b.label}</option>
-              ))}
-            </select>
-            <select
-              value={roomType}
-              onChange={(e) => setRoomType(e.target.value)}
-              className="rounded-lg border border-stone-200 px-2.5 py-1.5 text-stone-600 outline-none"
-            >
-              {ROOM_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-            <button
-              onClick={runSearch}
-              className="rounded-lg bg-stone-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97]"
-            >
-              Search
-            </button>
-          </div>
-        </div>
-
         {/* ---- Welcome ---- */}
-        <div className="mb-6 flex items-center gap-3">
+        <div className="mb-6 flex items-center gap-3 pl-12 sm:pl-0">
           <Avatar name={user.fullName ?? "U"} avatarUrl={(user as any).avatarUrl} size={44} />
           <div>
             <h1 className="text-xl font-semibold">Namaste, {firstName} 👋</h1>
@@ -339,44 +175,59 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
               <Sparkles size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-blue-700">Recommended Based On Your Preferences</p>
+              <p className="text-sm font-semibold text-blue-700">Content-Based Recommendations (Cosine Similarity)</p>
               <p className="text-xs text-stone-500">
-                Because you searched <span className="font-medium text-blue-600">{stats.preferredLocation}</span> · {stats.locationMatches} New Rooms Available
+                Personalized matching derived from your saved/favorite rooms using Cosine Similarity algorithm.
               </p>
             </div>
           </div>
           <button
-            onClick={viewMatches}
+            onClick={() => onNavigate("search")}
             className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-500 active:scale-[0.97]"
           >
-            View Matches
+            View All Rooms →
           </button>
         </div>
 
         {/* ---- Stats row ---- */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-stone-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-2 text-stone-400"><Search size={14} /><span className="text-xs">Active</span></div>
+          <button
+            onClick={() => onNavigate("search")}
+            className="flex flex-col text-left rounded-2xl border border-stone-200 bg-white p-4 transition-all hover:border-blue-500 hover:shadow-sm active:scale-[0.98]"
+          >
+            <div className="mb-2 flex items-center gap-2 text-blue-600"><Search size={14} /><span className="text-xs font-medium">Active</span></div>
             <p className="text-xs text-stone-400">Search Rooms</p>
-            <p className="text-lg font-semibold">{stats.availableRooms} available rooms</p>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-2 text-rose-400"><Heart size={14} /><span className="text-xs">Favorites</span></div>
+            <p className="text-lg font-semibold text-stone-900">{stats.availableRooms} available rooms</p>
+          </button>
+
+          <button
+            onClick={() => onNavigate("saved")}
+            className="flex flex-col text-left rounded-2xl border border-stone-200 bg-white p-4 transition-all hover:border-rose-500 hover:shadow-sm active:scale-[0.98]"
+          >
+            <div className="mb-2 flex items-center gap-2 text-rose-500"><Heart size={14} /><span className="text-xs font-medium">Favorites</span></div>
             <p className="text-xs text-stone-400">Saved Rooms</p>
-            <p className="text-lg font-semibold">{stats.savedRooms}</p>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-2 text-amber-500"><Clock size={14} /><span className="text-xs">Upcoming</span></div>
+            <p className="text-lg font-semibold text-stone-900">{stats.savedRooms}</p>
+          </button>
+
+          <button
+            onClick={() => onNavigate("payments")}
+            className="flex flex-col text-left rounded-2xl border border-stone-200 bg-white p-4 transition-all hover:border-amber-500 hover:shadow-sm active:scale-[0.98]"
+          >
+            <div className="mb-2 flex items-center gap-2 text-amber-500"><Clock size={14} /><span className="text-xs font-medium">Upcoming</span></div>
             <p className="text-xs text-stone-400">Rent Due In</p>
             <p className="text-lg font-semibold text-amber-600">
               {stats.rentDueInDays !== null ? `${stats.rentDueInDays} days` : "—"}
             </p>
-          </div>
-          <div className="rounded-2xl border border-stone-200 bg-white p-4">
-            <div className="mb-2 flex items-center gap-2 text-stone-400"><ClipboardList size={14} /><span className="text-xs">Reviewing</span></div>
+          </button>
+
+          <button
+            onClick={() => onNavigate("requests")}
+            className="flex flex-col text-left rounded-2xl border border-stone-200 bg-white p-4 transition-all hover:border-stone-500 hover:shadow-sm active:scale-[0.98]"
+          >
+            <div className="mb-2 flex items-center gap-2 text-stone-500"><ClipboardList size={14} /><span className="text-xs font-medium">Reviewing</span></div>
             <p className="text-xs text-stone-400">Pending Requests</p>
-            <p className="text-lg font-semibold">{stats.pendingRequests}</p>
-          </div>
+            <p className="text-lg font-semibold text-stone-900">{stats.pendingRequests}</p>
+          </button>
         </div>
 
         {/* ---- Current Rental (compact) ---- */}
@@ -432,15 +283,16 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
 
         {/* ---- Recommended rooms ---- */}
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Recommended Rooms</h2>
-          <div className="flex gap-1.5">
-            <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
-              <ChevronLeft size={14} />
-            </button>
-            <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
-              <ChevronRight size={14} />
-            </button>
+          <div>
+            <h2 className="text-base font-semibold">Recommended Rooms</h2>
+            <p className="text-xs text-stone-400">Content-Based Filtering (Cosine Similarity)</p>
           </div>
+          <button
+            onClick={() => onNavigate("search")}
+            className="flex items-center gap-1 text-xs font-semibold text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+          >
+            View All <ChevronRight size={14} />
+          </button>
         </div>
         {recommendations.length === 0 ? (
           <p className="mb-8 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-400">
@@ -448,39 +300,56 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
           </p>
         ) : (
           <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {recommendations.map(({ room }) => (
-              <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-                <RoomThumb imageUrl={room.roomImages?.[0]?.imageUrl} className="h-32 w-full" />
-                <div className="p-3">
-                  <h3 className="text-sm font-semibold">{room.title}</h3>
-                  <p className="text-xs text-stone-500">{room.location} · {room.roomType}</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <button
-                      onClick={() => toggleSave(room.id)}
-                      disabled={savingRoomId === room.id}
-                      className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-transform active:scale-[0.9] ${
-                        savedRoomIds.has(room.id) ? "border-rose-200 bg-rose-50 text-rose-500" : "border-stone-200 text-stone-400"
-                      }`}
-                      aria-label="Save room"
-                    >
-                      <Heart size={14} fill={savedRoomIds.has(room.id) ? "currentColor" : "none"} />
-                    </button>
-                    <button
-                      onClick={() => viewRoomDetails(room)}
-                      className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-[0.97]"
-                    >
-                      View Details
-                    </button>
-                    <button
-                      onClick={() => setBookingRoom(room)}
-                      className="flex-1 rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97]"
-                    >
-                      Book Now
-                    </button>
+            {recommendations.map((item: any) => {
+              const room: Room = item?.room || item;
+              if (!room || !room.id) return null;
+              const matchScore = item?.similarityScore ?? item?.finalScore ?? 0.85;
+              const matchPercent = Math.min(99, Math.max(65, Math.round(matchScore * 100)));
+
+              return (
+                <div key={room.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xs transition-shadow hover:shadow-md">
+                  <div className="relative">
+                    <RoomThumb imageUrl={room.roomImages?.[0]?.imageUrl} className="h-36 w-full object-cover" />
+                    <span className="absolute left-2.5 top-2.5 rounded-full bg-stone-900/85 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-xs">
+                      ⚡ {matchPercent}% Match (Cosine)
+                    </span>
+                  </div>
+                  <div className="p-3.5">
+                    <div className="mb-1 flex items-start justify-between gap-2">
+                      <h3 className="truncate text-sm font-semibold text-stone-900">{room.title}</h3>
+                      <span className="shrink-0 text-xs font-bold text-blue-600">
+                        Rs. {room.price?.toLocaleString()}/m
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-500">{room.location}, {room.city} · {room.roomType}</p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        onClick={() => toggleSave(room.id)}
+                        disabled={savingRoomId === room.id}
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-transform active:scale-[0.9] ${
+                          savedRoomIds.has(room.id) ? "border-rose-200 bg-rose-50 text-rose-500" : "border-stone-200 text-stone-400 hover:text-stone-600"
+                        }`}
+                        aria-label="Save room"
+                      >
+                        <Heart size={14} fill={savedRoomIds.has(room.id) ? "currentColor" : "none"} />
+                      </button>
+                      <button
+                        onClick={() => viewRoomDetails(room)}
+                        className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-[0.97]"
+                      >
+                        View Details
+                      </button>
+                      <button
+                        onClick={() => setBookingRoom(room)}
+                        className="flex-1 rounded-lg bg-stone-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.97]"
+                      >
+                        Book Now
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

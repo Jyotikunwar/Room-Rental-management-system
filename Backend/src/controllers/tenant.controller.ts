@@ -1,7 +1,10 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { getSimilarRoomRecommendations } from "../services/recommendation.service";
+import { getSimilarRoomRecommendations, getSavedRoomsContentBasedRecommendations } from "../services/recommendation.service";
+import { calculateCosineSimilarity } from "../utils/cosineSimilarity";
+import { calculatePopularityScore } from "../utils/popularityRanking";
+import { calculateHaversineDistance } from "../utils/haversine";
 
 export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
   try {
@@ -89,12 +92,13 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
     }
 
     let recommendations: any[] = [];
-    const favoriteRoomId = recentFavorites[0]?.roomId;
-    if (favoriteRoomId) {
-      recommendations = await getSimilarRoomRecommendations(favoriteRoomId, 6);
+    const contentBasedRecs = await getSavedRoomsContentBasedRecommendations(tenantId, 6);
+
+    if (contentBasedRecs && contentBasedRecs.length > 0) {
+      recommendations = contentBasedRecs;
     } else {
       const topRooms = await prisma.room.findMany({
-        where: { status: "AVAILABLE", city: "Kathmandu" },
+        where: { status: "AVAILABLE" },
         include: {
           roomImages: true,
           roomAmenities: { include: { amenity: true } },

@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 import { api, getImageUrl, type User, type Room } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
+import { filterRoomsMultiCriteria } from "../../utils/multiCriteriaFilter";
+
 
 interface AdminPropertiesProps {
   user: User;
@@ -56,14 +58,15 @@ export default function AdminProperties({ onLogout, activeRoute, onNavigate }: A
 
   const filtered = useMemo(() => {
     if (!rooms) return [];
-    const q = search.trim().toLowerCase();
-    return rooms.filter((r) => {
-      const matchesSearch = q === "" || r.title.toLowerCase().includes(q) || r.location.toLowerCase().includes(q);
-      const matchesCity = !city || r.city === city;
-      const matchesType = !roomType || r.roomType === roomType;
-      const matchesStatus = !status || r.status === status;
-      return matchesSearch && matchesCity && matchesType && matchesStatus;
+    let list = filterRoomsMultiCriteria(rooms, {
+      query: search,
+      city: city || undefined,
+      roomType: roomType || undefined,
     });
+    if (status) {
+      list = list.filter((r) => r.status === status);
+    }
+    return list;
   }, [rooms, search, city, roomType, status]);
 
   async function handleDelete(id: number) {
