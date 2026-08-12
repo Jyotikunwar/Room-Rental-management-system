@@ -71,6 +71,7 @@ async function main() {
   await prisma.roomImage.deleteMany({});
   await prisma.room.deleteMany({});
   await prisma.amenity.deleteMany({});
+  await prisma.faq.deleteMany({});
   await prisma.user.deleteMany({});
 
   // 2. Seed Standard Amenities
@@ -394,7 +395,49 @@ async function main() {
     },
   });
 
-  console.log("✅ SEEDING COMPLETE! Database ready with realistic images & coordinates.");
+  console.log("❓ Seeding Frequently Asked Questions (FAQs)...");
+  await prisma.faq.createMany({
+    data: [
+      {
+        question: "How do I search and book a room on RoomFinder?",
+        answer: "Browse available rooms on our landing page or search tab using filters like city, room type, budget, and amenities. Click 'View Details' or 'Book Now' to select your move-in date and send a request directly to the landlord.",
+        order: 1,
+        isActive: true,
+      },
+      {
+        question: "Are there any hidden commission or agent fees?",
+        answer: "No! RoomFinder is 100% free for renters. You pay zero platform fees or hidden commission. You only pay the rent and security deposit directly to the landlord.",
+        order: 2,
+        isActive: true,
+      },
+      {
+        question: "How can landlords list their property for rent?",
+        answer: "Simply create a Landlord account on RoomFinder, go to your dashboard, click 'List Property', and upload room photos, address, price, and amenities. Your listing will immediately go live.",
+        order: 3,
+        isActive: true,
+      },
+      {
+        question: "Is the security deposit refundable?",
+        answer: "Yes, security deposits are fully refundable at the end of your rental period, subject to room inspection and agreement terms between you and the landlord.",
+        order: 4,
+        isActive: true,
+      },
+      {
+        question: "Can I inspect the room before finalizing the booking?",
+        answer: "Absolutely! You can message or call the landlord directly through RoomFinder to schedule an in-person room visit before confirming your booking.",
+        order: 5,
+        isActive: true,
+      },
+      {
+        question: "What digital payment methods are accepted?",
+        answer: "RoomFinder supports digital payment tracking for eSewa, Khalti, direct bank transfer, and cash payments as agreed with your landlord.",
+        order: 6,
+        isActive: true,
+      },
+    ],
+  });
+
+  console.log("✅ SEEDING COMPLETE! Database ready with realistic images, coordinates & FAQs.");
 }
 
 main()
