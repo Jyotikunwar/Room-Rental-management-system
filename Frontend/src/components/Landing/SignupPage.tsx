@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { z } from "zod";
 
 import { FormField } from "./LoginPage";
 import {
@@ -27,6 +28,43 @@ interface SignupPageProps {
   onNavigateToLogin?: () => void;
 }
 
+// Mirrors the backend's Zod signup schema (fullName, email, password rules)
+// plus the extra client-only fields (confirmPassword, agreedToTerms) that
+// never get sent to the API but still need validating before submit.
+const signupSchema = z
+  .object({
+    fullName: z.string().trim().min(5, "Full name must be at least 5 characters"),
+    email: z
+      .string()
+      .trim()
+      .min(1, "Email is required")
+      .email("Enter a valid email address")
+      .endsWith("@gmail.com", "Email must end with @gmail.com"),
+
+    phone: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{10}$/, "Phone number must be exactly 10 digits"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[0-9]/, "Password must contain at least one number")
+      .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+    confirmPassword: z.string().min(1, "Please confirm your password"),
+    role: z.enum(["TENANT", "LANDLORD"]),
+    agreedToTerms: z.literal(true, {
+      message: "You must agree to the Terms of Service to continue",
+    }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
+  });
+
+type SignupFormValues = z.infer<typeof signupSchema>;
+type FieldErrors = Partial<Record<keyof SignupFormValues, string>>;
+
 export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPageProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,27 +76,42 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setFieldErrors({});
 
-    if (password !== confirmPassword) {
-      setError("Passwords don't match.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (!agreedToTerms) {
-      setError("Please agree to the Terms of Service to continue.");
+    const result = signupSchema.safeParse({
+      fullName,
+      email,
+      phone,
+      password,
+      confirmPassword,
+      role,
+      agreedToTerms,
+    });
+
+    if (!result.success) {
+      const errors: FieldErrors = {};
+      for (const issue of result.error.issues) {
+        const key = issue.path[0] as keyof SignupFormValues;
+        if (!errors[key]) errors[key] = issue.message;
+      }
+      setFieldErrors(errors);
       return;
     }
 
     setLoading(true);
     try {
-      await onSignup({ fullName, email, phone, password, role });
+      await onSignup({
+        fullName: result.data.fullName,
+        email: result.data.email,
+        phone: result.data.phone,
+        password: result.data.password,
+        role: result.data.role,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't create your account. Please try again.");
     } finally {
@@ -68,9 +121,6 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
 
   return (
     <div className="flex min-h-screen w-full">
-      {/* Left branding panel — hidden on mobile */}
-     
-
       {/* Right form panel */}
       <div className="flex w-full flex-1 items-center justify-center px-4 py-12 sm:px-6 lg:w-1/2 lg:px-12">
         <div className="w-full max-w-sm">
@@ -90,7 +140,7 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+          <form onSubmit={handleSubmit} noValidate className="mt-6 flex flex-col gap-4">
             {/* Role selector */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-stone-600">I am a</span>
@@ -120,78 +170,101 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
               </div>
             </div>
 
-            <FormField label="Full Name" icon={<User size={15} />}>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Your full name"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
-              />
-            </FormField>
+            <div>
+              <FormField label="Full Name" icon={<User size={15} />}>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your full name"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
+                />
+              </FormField>
+              {fieldErrors.fullName && <p className="mt-1 text-xs font-medium text-rose-600">{fieldErrors.fullName}</p>}
+            </div>
 
-            <FormField label="Email" icon={<Mail size={15} />}>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
-              />
-            </FormField>
+            <div>
+              <FormField label="Email" icon={<Mail size={15} />}>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@gmail.com"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
+                />
+              </FormField>
+              {fieldErrors.email && <p className="mt-1 text-xs font-medium text-rose-600">{fieldErrors.email}</p>}
+            </div>
 
-            <FormField label="Phone Number" icon={<Phone size={15} />}>
-              <input
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Your phone number"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
-              />
-            </FormField>
+            <div>
+              <FormField label="Phone Number" icon={<Phone size={15} />}>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="10-digit phone number"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
+                />
+              </FormField>
+              {fieldErrors.phone && <p className="mt-1 text-xs font-medium text-rose-600">{fieldErrors.phone}</p>}
+            </div>
 
-            <FormField label="Password" icon={<Lock size={15} />}>
-              <input
-                type={showPassword ? "text" : "password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="shrink-0 text-stone-400 hover:text-stone-600"
-              >
-                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </FormField>
+            <div>
+              <FormField label="Password" icon={<Lock size={15} />}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="shrink-0 text-stone-400 hover:text-stone-600"
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </FormField>
+              {fieldErrors.password ? (
+                <p className="mt-1 text-xs font-medium text-rose-600">{fieldErrors.password}</p>
+              ) : (
+                <p className="mt-1 text-[11px] text-stone-400">
+                  Min 8 characters, 1 uppercase letter, 1 number, 1 special character.
+                </p>
+              )}
+            </div>
 
-            <FormField label="Confirm Password" icon={<Lock size={15} />}>
-              <input
-                type={showPassword ? "text" : "password"}
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
-              />
-            </FormField>
+            <div>
+              <FormField label="Confirm Password" icon={<Lock size={15} />}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter your password"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
+                />
+              </FormField>
+              {fieldErrors.confirmPassword && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{fieldErrors.confirmPassword}</p>
+              )}
+            </div>
 
-            <label className="flex items-start gap-2 text-xs text-stone-500">
-              <input
-                type="checkbox"
-                checked={agreedToTerms}
-                onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-blue-600"
-              />
-              I agree to the <span className="font-medium text-stone-700">Terms of Service</span> and{" "}
-              <span className="font-medium text-stone-700">Privacy Policy</span>
-            </label>
+            <div>
+              <label className="flex items-start gap-2 text-xs text-stone-500">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-blue-600"
+                />
+                I agree to the <span className="font-medium text-stone-700">Terms of Service</span> and{" "}
+                <span className="font-medium text-stone-700">Privacy Policy</span>
+              </label>
+              {fieldErrors.agreedToTerms && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{fieldErrors.agreedToTerms}</p>
+              )}
+            </div>
 
             <button
               type="submit"

@@ -406,6 +406,27 @@ export const api = {
     });
     return res.json();
   },
+  forgotPassword: async (email: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    return res.json();
+  },
+  verifyResetToken: async (token: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-reset-token/${token}`);
+    return res.json();
+  },
+  resetPassword: async (data: { token: string; newPassword: string }) => {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   getCurrentUser: async () => {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       headers: getAuthHeaders(),

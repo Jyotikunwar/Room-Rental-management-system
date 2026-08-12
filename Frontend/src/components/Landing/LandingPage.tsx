@@ -23,9 +23,13 @@ export default function LandingPage({
   onLogin,
   onSignup,
   onPostProperty,
-  onBrowseRooms,
 }: LandingPageProps) {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+
+  const handleBrowseRooms = () => {
+    const section = document.getElementById("featured-rooms") || document.getElementById("home");
+    section?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
@@ -36,13 +40,14 @@ export default function LandingPage({
       />
 
       <Hero
-        onSearch={onBrowseRooms}
-        onFindRoomClick={onBrowseRooms}
+        onSearch={handleBrowseRooms}
+        onFindRoomClick={handleBrowseRooms}
         onListPropertyClick={onPostProperty}
         onSelectRoom={(room) => setSelectedRoom(room)}
       />
 
-      <FeaturedRooms onViewDetails={(room) => setSelectedRoom(room)} />
+      <FeaturedRooms onViewDetails={(room) => setSelectedRoom(room)} onBrowseRooms={handleBrowseRooms} />
+
 
       <HowItWorks />
 
@@ -54,7 +59,7 @@ export default function LandingPage({
 
       <FaqSection />
 
-      <CTASection onBrowseRoomsClick={onBrowseRooms} onListPropertyClick={onPostProperty} />
+      <CTASection onBrowseRoomsClick={handleBrowseRooms} onListPropertyClick={onPostProperty} />
 
       <Footer
         onSavedRoomsClick={onLogin}

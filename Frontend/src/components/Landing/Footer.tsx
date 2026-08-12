@@ -117,9 +117,9 @@ export default function Footer({ onSavedRoomsClick, onListPropertyClick, onManag
           <div>
             <p className="text-sm font-semibold text-white">Company</p>
             <ul className="mt-3 space-y-2 text-sm text-slate-400">
-              <li><button onClick={() => showComingSoon("About Us")} className="text-left hover:text-white">About Us</button></li>
+              <li><a href="#how-it-works" className="hover:text-white">About Us</a></li>
               <li><a href="#contact" className="hover:text-white">Contact</a></li>
-              <li><button onClick={() => showComingSoon("FAQ")} className="text-left hover:text-white">FAQ</button></li>
+              <li><a href="#faq" className="hover:text-white">FAQ</a></li>
             </ul>
             <div className="mt-4 space-y-2 text-sm text-slate-400">
               <a href="mailto:support@horizon.com" className="flex items-center gap-2 hover:text-white">
@@ -139,6 +139,7 @@ export default function Footer({ onSavedRoomsClick, onListPropertyClick, onManag
             <button onClick={() => showComingSoon("Terms of Service")} className="hover:text-white">Terms of Service</button>
           </div>
         </div>
+
       </div>
 
       {toast && (

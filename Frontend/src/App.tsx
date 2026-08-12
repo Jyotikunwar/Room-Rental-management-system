@@ -38,29 +38,54 @@ function LandingRoute() {
       onLogin={() => navigate("/login")}
       onSignup={() => navigate("/signup")}
       onPostProperty={() => navigate("/signup")}
-      onBrowseRooms={() => navigate("/signup")}
+      onBrowseRooms={() => {
+        const el = document.getElementById("featured-rooms") || document.getElementById("home");
+        el?.scrollIntoView({ behavior: "smooth" });
+      }}
     />
   );
 }
 
+
+import ForgotPasswordModal from "./components/Landing/ForgotPasswordModal";
+
+import { useSearchParams } from "react-router-dom";
+
 function LoginRoute({ onLoggedIn }: { onLoggedIn: (u: User) => void }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlResetToken = searchParams.get("resetToken") || "";
+  const [showForgotPassword, setShowForgotPassword] = useState(Boolean(urlResetToken));
+
   return (
-    <LoginPage
-      onLogin={async (email, password) => {
-        const res = await api.login(email, password);
-        if (!res.success) {
-          throw new Error(res.message || "Invalid email or password.");
-        }
-        setToken(res.token);
-        persistUser(res.user);
-        onLoggedIn(res.user);
-        navigate(roleHome(res.user), { replace: true });
-      }}
-      onNavigateToSignup={() => navigate("/signup")}
-    />
+    <>
+      <LoginPage
+        onLogin={async (email, password) => {
+          const res = await api.login(email, password);
+          if (!res.success) {
+            throw new Error(res.message || "Invalid email or password.");
+          }
+          setToken(res.token);
+          persistUser(res.user);
+          onLoggedIn(res.user);
+          navigate(roleHome(res.user), { replace: true });
+        }}
+        onNavigateToSignup={() => navigate("/signup")}
+        onForgotPassword={() => setShowForgotPassword(true)}
+      />
+
+      {showForgotPassword && (
+        <ForgotPasswordModal
+          initialToken={urlResetToken}
+          onClose={() => setShowForgotPassword(false)}
+          onSuccessLogin={() => setShowForgotPassword(false)}
+        />
+      )}
+    </>
   );
 }
+
+
 
 function SignupRoute({ onLoggedIn }: { onLoggedIn: (u: User) => void }) {
   const navigate = useNavigate();
