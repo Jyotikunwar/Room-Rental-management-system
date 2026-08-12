@@ -23,6 +23,11 @@ import {
   updateAdminMaintenanceStatus,
   deleteAdminMaintenanceTicket,
   getAdminActivity,
+  getAdminReviews,
+  getAdminReviewStats,
+  deleteAdminReview,
+  getAdminSettings,
+  updateAdminSettings,
 } from "../controllers/admin.controller";
 import { deleteRoom } from "../controllers/room.controller";
 import {
@@ -66,11 +71,20 @@ router.get("/properties/stats", authenticate, authorize("ADMIN"), getAdminProper
 router.patch("/properties/:id/approval", authenticate, authorize("ADMIN"), updatePropertyApprovalStatus);
 router.delete("/properties/:id", authenticate, authorize("ADMIN"), deleteRoom);
 
+// Admin Review Management
+router.get("/reviews", authenticate, authorize("ADMIN"), getAdminReviews);
+router.get("/reviews/stats", authenticate, authorize("ADMIN"), getAdminReviewStats);
+router.delete("/reviews/:id", authenticate, authorize("ADMIN"), deleteAdminReview);
+
 // Admin messaging
 router.get("/messages/contacts", authenticate, authorize("ADMIN"), getAdminMessageContacts);
 router.get("/messages/threads", authenticate, authorize("ADMIN"), getAdminMessageThreads);
 router.get("/messages/threads/:contactId", authenticate, authorize("ADMIN"), getAdminThreadMessages);
 router.post("/messages/threads/:contactId", authenticate, authorize("ADMIN"), sendAdminMessage);
 router.get("/contacts/:contactId", authenticate, authorize("ADMIN"), getAdminContactProfile);
+
+// Admin Settings Management
+router.get("/settings", authenticate, authorize("ADMIN"), getAdminSettings);
+router.patch("/settings", authenticate, authorize("ADMIN"), updateAdminSettings);
 
 export default router;

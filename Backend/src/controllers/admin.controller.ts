@@ -1284,3 +1284,229 @@ export const getAdminActivity = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: "Failed to fetch activity log", error: message });
   }
 };
+
+// GET /api/admin/reviews
+export const getAdminReviews = async (req: AuthRequest, res: Response) => {
+  try {
+    const { target, search } = req.query;
+
+    const reviews = await prisma.review.findMany({
+      include: {
+        user: { select: { id: true, fullName: true, avatarUrl: true } },
+        room: { select: { id: true, title: true, city: true, location: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let result = reviews.map((r) => ({
+      id: r.id,
+      reviewerName: r.user?.fullName || "Anonymous User",
+      reviewerAvatarUrl: r.user?.avatarUrl || undefined,
+      rating: r.rating,
+      comment: r.comment || "",
+      targetType: "PROPERTY" as const,
+      targetName: r.room?.title || "Property",
+      createdAt: r.createdAt.toISOString(),
+    }));
+
+    if (search) {
+      const q = String(search).toLowerCase();
+      result = result.filter(
+        (r) =>
+          r.reviewerName.toLowerCase().includes(q) ||
+          r.comment.toLowerCase().includes(q) ||
+          (r.targetName && r.targetName.toLowerCase().includes(q))
+      );
+    }
+
+    if (target && target !== "ALL") {
+      result = result.filter((r) => r.targetType === String(target).toUpperCase());
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: result.length,
+      reviews: result,
+    });
+  } catch (error: any) {
+    console.error("Get admin reviews error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch admin reviews", error: error.message });
+  }
+};
+
+// GET /api/admin/reviews/stats
+export const getAdminReviewStats = async (req: AuthRequest, res: Response) => {
+  try {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [allReviews, currentMonthCount, lastMonthCount] = await Promise.all([
+      prisma.review.findMany({ select: { rating: true } }),
+      prisma.review.count({ where: { createdAt: { gte: startOfMonth } } }),
+      prisma.review.count({ where: { createdAt: { gte: startOfLastMonth, lt: startOfMonth } } }),
+    ]);
+
+    const totalReviews = allReviews.length;
+    const totalRatingSum = allReviews.reduce((sum, r) => sum + r.rating, 0);
+    const averageRating = totalReviews > 0 ? Math.round((totalRatingSum / totalReviews) * 10) / 10 : 0;
+
+    const positiveReviews = allReviews.filter((r) => r.rating >= 4).length;
+    const negativeReviews = allReviews.filter((r) => r.rating <= 2).length;
+
+    let totalReviewsGrowthPct: number | undefined = undefined;
+    if (lastMonthCount > 0) {
+      totalReviewsGrowthPct = Math.round(((currentMonthCount - lastMonthCount) / lastMonthCount) * 100);
+    } else if (currentMonthCount > 0) {
+      totalReviewsGrowthPct = 100;
+    }
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalReviews,
+        averageRating,
+        positiveReviews,
+        negativeReviews,
+        totalReviewsGrowthPct,
+      },
+    });
+  } catch (error: any) {
+    console.error("Get admin review stats error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch review stats", error: error.message });
+  }
+};
+
+// DELETE /api/admin/reviews/:id
+export const deleteAdminReview = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    const review = await prisma.review.findUnique({ where: { id } });
+    if (!review) {
+      return res.status(404).json({ success: false, message: "Review not found" });
+    }
+
+    await prisma.review.delete({ where: { id } });
+
+    return res.status(200).json({
+      success: true,
+      message: "Review deleted successfully",
+    });
+  } catch (error: any) {
+    console.error("Delete admin review error:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete review", error: error.message });
+  }
+};
+
+// GET /api/admin/settings
+export const getAdminSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.id;
+    const admin = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        avatarUrl: true,
+        role: true,
+        notificationPrefs: true,
+        createdAt: true,
+      },
+    });
+
+    if (!admin) {
+      return res.status(404).json({ success: false, message: "Admin user not found" });
+    }
+
+    const defaultPrefs = {
+      emailAlerts: true,
+      bookingAlerts: true,
+      paymentAlerts: true,
+      maintenanceAlerts: true,
+      autoApproveListings: false,
+      requireIdVerification: true,
+      systemMaintenanceMode: false,
+    };
+
+    const currentPrefs =
+      admin.notificationPrefs && typeof admin.notificationPrefs === "object"
+        ? { ...defaultPrefs, ...(admin.notificationPrefs as object) }
+        : defaultPrefs;
+
+    return res.status(200).json({
+      success: true,
+      settings: {
+        id: admin.id,
+        fullName: admin.fullName,
+        email: admin.email,
+        phone: admin.phone || "",
+        avatarUrl: admin.avatarUrl || undefined,
+        role: admin.role,
+        notificationPrefs: currentPrefs,
+        createdAt: admin.createdAt,
+      },
+    });
+  } catch (error: any) {
+    console.error("Get admin settings error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch admin settings", error: error.message });
+  }
+};
+
+// PATCH /api/admin/settings
+export const updateAdminSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const adminId = req.user!.id;
+    const { fullName, phone, notificationPrefs } = req.body;
+
+    const existingAdmin = await prisma.user.findUnique({ where: { id: adminId } });
+    if (!existingAdmin) {
+      return res.status(404).json({ success: false, message: "Admin user not found" });
+    }
+
+    let updatedPrefs = existingAdmin.notificationPrefs;
+    if (notificationPrefs && typeof notificationPrefs === "object") {
+      const current = (existingAdmin.notificationPrefs as object) || {};
+      updatedPrefs = { ...current, ...notificationPrefs };
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: adminId },
+      data: {
+        ...(fullName ? { fullName: String(fullName).trim() } : {}),
+        ...(phone !== undefined ? { phone: String(phone).trim() } : {}),
+        ...(updatedPrefs ? { notificationPrefs: updatedPrefs } : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        avatarUrl: true,
+        role: true,
+        notificationPrefs: true,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Admin settings updated successfully",
+      user: updatedUser,
+      settings: {
+        id: updatedUser.id,
+        fullName: updatedUser.fullName,
+        email: updatedUser.email,
+        phone: updatedUser.phone || "",
+        avatarUrl: updatedUser.avatarUrl || undefined,
+        role: updatedUser.role,
+        notificationPrefs: updatedUser.notificationPrefs,
+      },
+    });
+  } catch (error: any) {
+    console.error("Update admin settings error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update admin settings", error: error.message });
+  }
+};
+

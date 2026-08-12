@@ -654,6 +654,27 @@ export const api = {
     });
     return res.json();
   },
+  deleteAdminReview: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/admin/reviews/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminSettings: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/settings`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updateAdminSettings: async (data: { fullName?: string; phone?: string; notificationPrefs?: Record<string, boolean> }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/settings`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
   getTenantReviews: async () => {
     const res = await fetch(`${API_BASE_URL}/landlord/tenant-reviews`, {
       headers: getAuthHeaders(),

@@ -213,14 +213,6 @@ export default function AdminActivity({ onLogout, activeRoute, onNavigate }: Adm
               <RefreshCw size={14} className={loading ? "animate-spin text-blue-600" : "text-gray-500"} />
               <span className="hidden xs:inline">Refresh</span>
             </button>
-
-            <button
-              onClick={() => onNavigate("properties")}
-              className="flex items-center gap-1.5 rounded-xl bg-gray-900 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gray-800 active:scale-95 transition-all"
-            >
-              <Plus size={15} />
-              <span>Add Property</span>
-            </button>
           </div>
         </header>
 

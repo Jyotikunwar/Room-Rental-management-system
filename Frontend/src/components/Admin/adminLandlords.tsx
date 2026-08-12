@@ -222,13 +222,6 @@ export default function AdminLandlords({ onLogout, activeRoute, onNavigate, onAd
             <button className="rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50" aria-label="Notifications">
               <Bell size={18} />
             </button>
-            <button
-              onClick={onAddLandlord}
-              className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              <UserPlus size={16} />
-              Add Landlord
-            </button>
           </div>
         </header>
 

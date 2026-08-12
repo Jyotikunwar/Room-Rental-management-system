@@ -262,13 +262,6 @@ export default function AdminTenants({ onLogout, activeRoute, onNavigate, onAddT
               <Bell size={18} />
               <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
             </button>
-            <button
-              onClick={onAddTenant}
-              className="flex items-center gap-1.5 rounded-xl bg-gray-900 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow hover:bg-gray-800 active:scale-95 transition-all"
-            >
-              <UserPlus size={16} />
-              <span>Add Tenant</span>
-            </button>
           </div>
         </header>
 

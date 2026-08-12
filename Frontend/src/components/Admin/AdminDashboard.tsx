@@ -14,9 +14,12 @@ import {
   Clock,
   CalendarClock,
   DoorOpen,
-  MessageSquare,
+  Plus,
+  ArrowRight,
+  Eye,
+  X,
 } from "lucide-react";
-import { api, type Room, type Booking, type Inquiry, type User } from "../../services/api";
+import { api, type Room, type Booking, type User } from "../../services/api";
 import { LocationSelector } from "../Common/LocationSelector";
 
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
@@ -35,10 +38,6 @@ interface AdminDashboardProps {
   onLogout?: () => void;
 }
 
-// NOTE: shape assumed from the mockup — your real getAdminStats() response
-// may use different field names. Adjust to match, or compute these
-// client-side from rooms/bookings the way LandlordDashboard does, if no
-// single stats endpoint exists yet.
 interface AdminDashboardStats {
   totalProperties: number;
   activeTenants: number;
@@ -50,16 +49,18 @@ interface AdminDashboardStats {
   leaseExpiring: number;
   maintenanceRequests: number;
   recentMoveOuts: number;
+  totalLandlords?: number;
+  totalTenants?: number;
 }
 
 interface ActivityEntry {
   id: string;
-  icon: typeof MessageSquare;
-  iconColor: string;
-  bgColor: string;
+  category: string;
   title: string;
-  subtitle?: string;
-  time: string;
+  description: string;
+  createdAt: string;
+  status?: string;
+  targetRoute?: AdminRoute;
 }
 
 const EMPTY_STATS: AdminDashboardStats = {
@@ -78,11 +79,14 @@ const EMPTY_STATS: AdminDashboardStats = {
 export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [stats, setStats] = useState<AdminDashboardStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
   const [activeRoute, setActiveRoute] = useState<AdminRoute>("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [roomTypeFilter, setRoomTypeFilter] = useState<string>("ALL");
+  const [selectedPropertyModal, setSelectedPropertyModal] = useState<Room | null>(null);
 
   useEffect(() => {
     loadDashboard();
@@ -91,11 +95,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   async function loadDashboard() {
     setLoading(true);
     try {
-      const [statsRes, roomsRes, bookingsRes, inquiriesRes] = await Promise.all([
+      const [statsRes, roomsRes, bookingsRes, activityRes] = await Promise.all([
         api.getAdminStats(),
-        api.getRooms(),
-        api.getLandlordBookings().catch(() => ({ success: false })),
-        api.getReceivedInquiries().catch(() => ({ success: false })),
+        api.getAdminProperties(),
+        api.getAdminBookings().catch(() => ({ success: false })),
+        api.getAdminActivity().catch(() => ({ success: false })),
       ]);
 
       if (statsRes?.success && statsRes.stats) {
@@ -103,7 +107,19 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       }
       if (roomsRes?.success) setRooms(roomsRes.rooms || []);
       if (bookingsRes?.success) setBookings(bookingsRes.bookings || []);
-      if (inquiriesRes?.success) setInquiries(inquiriesRes.inquiries || []);
+      if (activityRes?.success && activityRes.entries) {
+        setActivities(
+          activityRes.entries.map((e: any) => ({
+            id: e.id,
+            category: e.category,
+            title: e.title,
+            description: e.description,
+            createdAt: e.createdAt,
+            status: e.status,
+            targetRoute: e.metadata?.targetRoute as AdminRoute,
+          }))
+        );
+      }
     } catch (e) {
       console.error("Failed to load admin dashboard:", e);
     } finally {
@@ -113,77 +129,59 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const filteredRooms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return rooms;
-    return rooms.filter(
-      (r) =>
+    return rooms.filter((r) => {
+      const matchesQuery =
+        !q ||
         r.title.toLowerCase().includes(q) ||
         r.location.toLowerCase().includes(q) ||
-        r.city.toLowerCase().includes(q)
-    );
-  }, [rooms, searchQuery]);
+        r.city.toLowerCase().includes(q) ||
+        (r.landlord?.fullName && r.landlord.fullName.toLowerCase().includes(q));
 
-  const notificationCount = stats.pendingMaintenance + stats.rentDue > 0
-    ? stats.pendingMaintenance + (bookings.filter((b) => b.status === "PENDING").length)
-    : 0;
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        (statusFilter === "VACANT" && r.status === "AVAILABLE") ||
+        (statusFilter === "OCCUPIED" && r.status === "BOOKED") ||
+        (statusFilter === "MAINTENANCE" && r.status === "UNDER_MAINTENANCE");
+
+      const matchesType = roomTypeFilter === "ALL" || r.roomType === roomTypeFilter;
+
+      return matchesQuery && matchesStatus && matchesType;
+    });
+  }, [rooms, searchQuery, statusFilter, roomTypeFilter]);
+
+  const notificationCount = stats.pendingMaintenance + stats.leaseExpiring;
 
   const statCards: {
     label: string;
     value: string;
     icon: typeof Building2;
     valueColor: string;
+    route: AdminRoute;
   }[] = [
-    { label: "Total Properties", value: stats.totalProperties.toString(), icon: Building2, valueColor: "text-gray-900" },
-    { label: "Active Tenants", value: stats.activeTenants.toString(), icon: Users, valueColor: "text-gray-900" },
-    { label: "Occupancy Rate", value: `${stats.occupancyRate}%`, icon: PieChart, valueColor: "text-gray-900" },
-    { label: "Vacant Properties", value: stats.vacantProperties.toString(), icon: Ban, valueColor: "text-red-600" },
-    { label: "Monthly Revenue", value: `Rs. ${stats.monthlyRevenue.toLocaleString()}`, icon: Banknote, valueColor: "text-green-600" },
-    { label: "Pending Maint.", value: stats.pendingMaintenance.toString(), icon: Wrench, valueColor: "text-amber-600" },
-    { label: "Rent Due", value: `Rs. ${stats.rentDue.toLocaleString()}`, icon: Clock, valueColor: "text-red-600" },
-    { label: "Lease Expiry (30d)", value: stats.leaseExpiring.toString(), icon: CalendarClock, valueColor: "text-amber-600" },
-    { label: "Maintenance Requests", value: stats.maintenanceRequests.toString(), icon: Wrench, valueColor: "text-blue-600" },
-    { label: "Recent Move-outs", value: stats.recentMoveOuts.toString(), icon: DoorOpen, valueColor: "text-gray-900" },
+    { label: "Total Properties", value: stats.totalProperties.toString(), icon: Building2, valueColor: "text-gray-900", route: "properties" },
+    { label: "Active Tenants", value: stats.activeTenants.toString(), icon: Users, valueColor: "text-gray-900", route: "tenants" },
+    { label: "Occupancy Rate", value: `${stats.occupancyRate}%`, icon: PieChart, valueColor: "text-gray-900", route: "properties" },
+    { label: "Vacant Properties", value: stats.vacantProperties.toString(), icon: Ban, valueColor: "text-red-600", route: "properties" },
+    { label: "Monthly Revenue", value: `Rs. ${stats.monthlyRevenue.toLocaleString()}`, icon: Banknote, valueColor: "text-green-600", route: "payments" },
+    { label: "Pending Maint.", value: stats.pendingMaintenance.toString(), icon: Wrench, valueColor: "text-amber-600", route: "maintenance" },
+    { label: "Rent Due", value: `Rs. ${stats.rentDue.toLocaleString()}`, icon: Clock, valueColor: "text-red-600", route: "payments" },
+    { label: "Lease Expiry (30d)", value: stats.leaseExpiring.toString(), icon: CalendarClock, valueColor: "text-amber-600", route: "tenants" },
+    { label: "Maintenance Requests", value: stats.maintenanceRequests.toString(), icon: Wrench, valueColor: "text-blue-600", route: "maintenance" },
+    { label: "Recent Move-outs", value: stats.recentMoveOuts.toString(), icon: DoorOpen, valueColor: "text-gray-900", route: "tenants" },
   ];
 
   const statusStyle = (status: string) =>
     status === "AVAILABLE"
-      ? "bg-red-50 text-red-600"
+      ? "bg-red-50 text-red-600 border border-red-100"
       : status === "BOOKED"
-      ? "bg-green-50 text-green-600"
-      : "bg-blue-50 text-blue-600";
+      ? "bg-green-50 text-green-600 border border-green-100"
+      : "bg-blue-50 text-blue-600 border border-blue-100";
 
   const statusLabel = (status: string) =>
     status === "AVAILABLE" ? "Vacant" : status === "BOOKED" ? "Occupied" : "Maintenance";
 
-  const activityFeed = useMemo<ActivityEntry[]>(() => {
-    const entries: ActivityEntry[] = [];
-    bookings.slice(0, 3).forEach((b) => {
-      entries.push({
-        id: `booking-${b.id}`,
-        icon: Receipt,
-        iconColor: "text-green-600",
-        bgColor: "bg-green-50",
-        title: b.payment?.status === "PAID" ? "Payment Received" : "Booking Update",
-        subtitle: `${b.room?.title || "A room"} — ${b.status}`,
-        time: new Date(b.createdAt).toLocaleDateString(),
-      });
-    });
-    inquiries.slice(0, 3).forEach((i) => {
-      entries.push({
-        id: `inquiry-${i.id}`,
-        icon: MessageSquare,
-        iconColor: "text-blue-600",
-        bgColor: "bg-blue-50",
-        title: `New message from ${i.sender?.fullName || "a tenant"}`,
-        subtitle: i.message,
-        time: new Date(i.createdAt).toLocaleDateString(),
-      });
-    });
-    return entries
-      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-      .slice(0, 5);
-  }, [bookings, inquiries]);
-
   const quickActions = [
+    { label: "Add Property", icon: Plus, onClick: () => setActiveRoute("properties") },
     { label: "Add Tenant", icon: UserPlus, onClick: () => setActiveRoute("tenants") },
     { label: "Record Payment", icon: Receipt, onClick: () => setActiveRoute("payments") },
     { label: "Send Notice", icon: Send, onClick: () => setActiveRoute("messages") },
@@ -221,8 +219,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row bg-gray-50 font-sans">
       <AdminSidebar active={activeRoute} onNavigate={setActiveRoute} onLogout={onLogout} />
-      <div className="flex-1">
-        <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Navigation Header */}
+        <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between sticky top-0 z-20 shadow-sm">
           <div className="flex flex-1 items-center gap-3">
             <div className="relative w-full sm:max-w-xs">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -230,17 +229,17 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search properties, tenants..."
-                className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
+                placeholder="Search properties, landlords, city..."
+                className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900 focus:bg-white transition-colors"
               />
             </div>
             <LocationSelector />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
             <button
               onClick={() => setActiveRoute("activity")}
-              className="relative rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50"
+              className="relative rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50 transition-colors"
               aria-label="Notifications"
             >
               <Bell size={18} />
@@ -253,17 +252,22 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           </div>
         </header>
 
-        <main className="p-6">
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.fullName?.split(" ")[0] || "Admin"}!</h1>
-            <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
-              <span>{stats.totalProperties} Properties</span>
-              <span>{stats.activeTenants} Active Tenants</span>
-              <span className="text-red-600">{stats.vacantProperties} Vacant Properties</span>
-              <span className="text-blue-600">{stats.pendingMaintenance} Pending Maintenance Requests</span>
-            </p>
+        {/* Main Content Area */}
+        <main className="p-6 flex-1">
+          {/* Welcome Banner */}
+          <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.fullName?.split(" ")[0] || "Admin"}!</h1>
+              <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+                <span><strong className="text-gray-800">{stats.totalProperties}</strong> Total Properties</span>
+                <span><strong className="text-gray-800">{stats.activeTenants}</strong> Active Tenants</span>
+                <span className="text-red-600 font-medium"><strong>{stats.vacantProperties}</strong> Vacant Units</span>
+                <span className="text-amber-600 font-medium"><strong>{stats.pendingMaintenance}</strong> Maintenance Tickets</span>
+              </p>
+            </div>
           </div>
 
+          {/* Quick Action Buttons */}
           <div className="mb-6 flex flex-wrap gap-3">
             {quickActions.map((action) => {
               const Icon = action.icon;
@@ -271,7 +275,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 <button
                   key={action.label}
                   onClick={action.onClick}
-                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-800 hover:bg-gray-900 hover:text-white shadow-sm transition-all"
                 >
                   <Icon size={15} />
                   {action.label}
@@ -280,14 +284,19 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             })}
           </div>
 
+          {/* Summary Stat Cards Grid */}
           <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
             {statCards.map((card) => {
               const Icon = card.icon;
               return (
-                <div key={card.label} className="rounded-2xl border border-gray-200 bg-white p-4">
+                <div
+                  key={card.label}
+                  onClick={() => setActiveRoute(card.route)}
+                  className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-gray-300 transition-all cursor-pointer group"
+                >
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{card.label}</p>
-                    <Icon size={16} className="text-gray-300" />
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 group-hover:text-gray-600 transition-colors">{card.label}</p>
+                    <Icon size={16} className="text-gray-300 group-hover:text-gray-700 transition-colors" />
                   </div>
                   <p className={`mt-2 text-xl font-bold ${card.valueColor}`}>{loading ? "—" : card.value}</p>
                 </div>
@@ -295,66 +304,117 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             })}
           </div>
 
+          {/* Responsive Filters & Main Grid */}
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 xl:col-span-2">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-gray-900">Property Overview</h2>
-                <button onClick={() => setActiveRoute("properties")} className="text-sm font-medium text-gray-500 hover:text-gray-900">
-                  View All →
-                </button>
+            {/* Left 2-Columns: Property Overview */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2">
+              <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Property Overview</h2>
+                  <p className="text-xs text-gray-400">Live properties status and tenant assignments</p>
+                </div>
+
+                {/* Property Filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="h-8 rounded-lg border border-gray-200 bg-gray-50 px-2.5 text-xs font-medium text-gray-700 outline-none focus:border-gray-900"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="VACANT">Vacant</option>
+                    <option value="OCCUPIED">Occupied</option>
+                    <option value="MAINTENANCE">Maintenance</option>
+                  </select>
+
+                  <select
+                    value={roomTypeFilter}
+                    onChange={(e) => setRoomTypeFilter(e.target.value)}
+                    className="h-8 rounded-lg border border-gray-200 bg-gray-50 px-2.5 text-xs font-medium text-gray-700 outline-none focus:border-gray-900"
+                  >
+                    <option value="ALL">All Types</option>
+                    <option value="SINGLE">Single</option>
+                    <option value="DOUBLE">Double</option>
+                    <option value="FLAT">Flat</option>
+                    <option value="APARTMENT">Apartment</option>
+                  </select>
+
+                  <button
+                    onClick={() => setActiveRoute("properties")}
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors ml-1"
+                  >
+                    View All <ArrowRight size={13} />
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
-                      <th className="pb-3 font-medium">Property</th>
-                      <th className="pb-3 font-medium">Tenant</th>
-                      <th className="pb-3 font-medium">Monthly Rent</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium">Last Payment</th>
+                    <tr className="text-left text-xs uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                      <th className="pb-3 font-semibold">Property</th>
+                      <th className="pb-3 font-semibold">Landlord / Owner</th>
+                      <th className="pb-3 font-semibold">Active Tenant</th>
+                      <th className="pb-3 font-semibold">Rent</th>
+                      <th className="pb-3 font-semibold">Status</th>
+                      <th className="pb-3 font-semibold text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-100">
                     {loading ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-gray-400">Loading properties...</td>
+                        <td colSpan={6} className="py-10 text-center text-gray-400">
+                          <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-900 border-t-transparent mb-2" />
+                          <p>Loading real property data...</p>
+                        </td>
                       </tr>
                     ) : filteredRooms.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-gray-400">
-                          {rooms.length === 0 ? "No properties yet." : "No properties match your search."}
+                        <td colSpan={6} className="py-10 text-center text-gray-400">
+                          <Building2 className="mx-auto h-8 w-8 text-gray-300 mb-2" />
+                          <p className="text-sm font-medium text-gray-600">No properties match your filter criteria.</p>
                         </td>
                       </tr>
                     ) : (
                       filteredRooms.slice(0, 6).map((room) => {
-                        const roomBooking = bookings.find((b) => b.roomId === room.id && b.status === "APPROVED");
+                        const activeBooking = bookings.find((b) => b.roomId === room.id && b.status === "APPROVED");
                         return (
-                          <tr key={room.id} className="border-t border-gray-100">
-                            <td className="py-3">
+                          <tr key={room.id} className="hover:bg-gray-50/60 transition-colors">
+                            <td className="py-3.5 pr-3">
                               <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100">
-                                  <Building2 size={16} className="text-gray-500" />
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gray-900 text-white font-bold text-xs">
+                                  {room.roomType.slice(0, 2)}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-gray-900">{room.title}</p>
-                                  <p className="text-xs text-gray-400">{room.location}, {room.city}</p>
+                                  <p className="font-semibold text-gray-900 text-xs sm:text-sm truncate max-w-[150px] sm:max-w-[200px]" title={room.title}>
+                                    {room.title}
+                                  </p>
+                                  <p className="text-[11px] text-gray-400">{room.location}, {room.city}</p>
                                 </div>
                               </div>
                             </td>
-                            <td className="py-3 text-gray-700">{roomBooking?.tenant?.fullName || "No Tenant"}</td>
-                            <td className="py-3 text-gray-700">
-                              {room.status === "BOOKED" ? `Rs. ${room.price.toLocaleString()}` : "Not Applicable"}
+                            <td className="py-3.5 text-xs text-gray-700 font-medium whitespace-nowrap">
+                              {room.landlord?.fullName || "Ram Owner"}
                             </td>
-                            <td className="py-3">
-                              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle(room.status)}`}>
+                            <td className="py-3.5 text-xs text-gray-700 whitespace-nowrap">
+                              {activeBooking?.tenant?.fullName || <span className="text-gray-400 italic">Unassigned</span>}
+                            </td>
+                            <td className="py-3.5 text-xs font-semibold text-gray-900 whitespace-nowrap">
+                              Rs. {room.price.toLocaleString()}/mo
+                            </td>
+                            <td className="py-3.5 whitespace-nowrap">
+                              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusStyle(room.status)}`}>
                                 • {statusLabel(room.status)}
                               </span>
                             </td>
-                            <td className="py-3 text-gray-500">
-                              {roomBooking?.payment?.paidAt
-                                ? new Date(roomBooking.payment.paidAt).toLocaleDateString()
-                                : "Not Applicable"}
+                            <td className="py-3.5 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => setSelectedPropertyModal(room)}
+                                className="rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                                title="Quick View"
+                              >
+                                <Eye size={14} />
+                              </button>
                             </td>
                           </tr>
                         );
@@ -365,45 +425,119 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               </div>
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-gray-900">Recent Activity</h2>
+            {/* Right Column: Live Activity Feed */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
+                <h2 className="text-base font-bold text-gray-900">Recent Platform Activity</h2>
+                <button
+                  onClick={() => setActiveRoute("activity")}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  View Log →
+                </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {loading ? (
-                  <p className="text-sm text-gray-400">Loading activity...</p>
-                ) : activityFeed.length === 0 ? (
-                  <p className="text-sm text-gray-400">No recent activity yet.</p>
+                  <p className="text-xs text-gray-400 py-6 text-center">Loading activity log...</p>
+                ) : activities.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-6 text-center">No recent activities logged.</p>
                 ) : (
-                  activityFeed.map((entry) => {
-                    const Icon = entry.icon;
-                    return (
-                      <div key={entry.id} className="flex items-start gap-3">
-                        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${entry.bgColor} ${entry.iconColor}`}>
-                          <Icon size={15} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900">{entry.title}</p>
-                          {entry.subtitle && <p className="truncate text-xs text-gray-500">{entry.subtitle}</p>}
-                          <p className="mt-0.5 text-xs text-gray-400">{entry.time}</p>
-                        </div>
+                  activities.slice(0, 6).map((entry) => (
+                    <div
+                      key={entry.id}
+                      onClick={() => entry.targetRoute && setActiveRoute(entry.targetRoute)}
+                      className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer border border-transparent hover:border-gray-100"
+                    >
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-700 font-bold text-[10px]">
+                        {entry.category.slice(0, 2)}
                       </div>
-                    );
-                  })
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-900 truncate">{entry.title}</p>
+                        <p className="text-[11px] text-gray-500 line-clamp-1">{entry.description}</p>
+                        <p className="mt-0.5 text-[10px] text-gray-400">
+                          {new Date(entry.createdAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
 
               <button
                 onClick={() => setActiveRoute("activity")}
-                className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                className="mt-5 w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-900 hover:text-white transition-colors"
               >
-                View All Activity
+                View Full Audit Log
               </button>
             </div>
           </div>
         </main>
       </div>
+
+      {/* QUICK VIEW PROPERTY MODAL */}
+      {selectedPropertyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-bold text-gray-900">Property Details</h3>
+              <button
+                onClick={() => setSelectedPropertyModal(null)}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs">
+              <div className="rounded-xl bg-gray-50 p-3">
+                <p className="font-bold text-gray-900 text-sm">{selectedPropertyModal.title}</p>
+                <p className="text-gray-500 mt-0.5">{selectedPropertyModal.location}, {selectedPropertyModal.city}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="border border-gray-100 p-2.5 rounded-xl">
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase">Room Type</p>
+                  <p className="font-bold text-gray-800">{selectedPropertyModal.roomType}</p>
+                </div>
+                <div className="border border-gray-100 p-2.5 rounded-xl">
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase">Monthly Price</p>
+                  <p className="font-bold text-green-600">Rs. {selectedPropertyModal.price.toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="border border-gray-100 p-2.5 rounded-xl">
+                <p className="text-[10px] text-gray-400 font-semibold uppercase">Landlord Owner</p>
+                <p className="font-semibold text-gray-800">{selectedPropertyModal.landlord?.fullName || "Ram Owner"}</p>
+                <p className="text-gray-500">{selectedPropertyModal.landlord?.email}</p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setSelectedPropertyModal(null)}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedPropertyModal(null);
+                  setActiveRoute("properties");
+                }}
+                className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800"
+              >
+                Manage in Properties →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
