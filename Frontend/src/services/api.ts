@@ -7,7 +7,8 @@ export function getImageUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
   // Uploaded images are served by the backend; static /images/ assets stay on the frontend origin.
-  if (path.startsWith("/uploads/")) return `${UPLOAD_BASE_URL}${path}`;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  if (cleanPath.startsWith("/uploads/")) return `${UPLOAD_BASE_URL}${cleanPath}`;
   return path;
 }
 export interface PublicStats {

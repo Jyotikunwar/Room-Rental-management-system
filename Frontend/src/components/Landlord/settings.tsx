@@ -124,7 +124,8 @@ export default function LandlordSettings({ user, onLogout, activeRoute, onNaviga
       const newUrl = res.user?.avatarUrl ?? res.avatarUrl ?? "";
       setAvatarUrl(newUrl);
       user.avatarUrl = newUrl;
-      if (res.user) onUserUpdate?.(res.user);
+      const updatedUser = res.user || { ...user, avatarUrl: newUrl };
+      onUserUpdate?.(updatedUser);
       const storedUser = localStorage.getItem("user");
       if (storedUser) {
         try {

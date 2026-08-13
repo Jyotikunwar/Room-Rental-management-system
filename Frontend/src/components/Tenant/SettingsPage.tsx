@@ -25,6 +25,7 @@ interface SettingsPageProps {
   user: User;
   onLogout: () => void;
   onNavigate: (view: TenantView) => void;
+  onUserUpdate?: (user: User) => void;
 }
 
 type IdType = "CITIZENSHIP" | "PASSPORT" | "NATIONAL_ID" | "DRIVING_LICENSE";
@@ -70,7 +71,7 @@ function validateIdNumber(idType: string, idNumber: string): string | null {
   return null;
 }
 
-export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPageProps) {
+export default function SettingsPage({ user, onLogout, onNavigate, onUserUpdate }: SettingsPageProps) {
   const [fullName, setFullName] = useState(user.fullName ?? "");
   const [email] = useState(user.email ?? "");
   const [phone] = useState(user.phone ?? "");
@@ -116,6 +117,10 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       const res = await api.updateProfile({ fullName, phone });
       if (res.success === false) throw new Error(res.message || "Couldn't save changes.");
       setProfileSaved(true);
+      if (res.user) {
+        const updatedUser = { ...user, ...res.user };
+        onUserUpdate?.(updatedUser);
+      }
       setTimeout(() => setProfileSaved(false), 2000);
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Couldn't save changes.");
@@ -134,7 +139,9 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       if (res.success === false) throw new Error(res.message || "Couldn't upload photo.");
       const newUrl = res.user?.avatarUrl ?? res.avatarUrl ?? "";
       setAvatarUrl(newUrl);
+      const updatedUser = res.user || { ...user, avatarUrl: newUrl };
       user.avatarUrl = newUrl;
+      onUserUpdate?.(updatedUser);
       const storedUser = localStorage.getItem("user");
       if (storedUser) {
         try {

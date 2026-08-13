@@ -28,9 +28,10 @@ interface LandlordDashboardProps {
   user: User;
   onLogout?: () => void;
   onAddProperty?: () => void;
+  onUserUpdate?: (user: User) => void;
 }
 
-export default function LandlordDashboard({ user, onLogout, onAddProperty }: LandlordDashboardProps) {
+export default function LandlordDashboard({ user, onLogout, onAddProperty, onUserUpdate }: LandlordDashboardProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
@@ -149,7 +150,7 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
     return <LandlordReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "settings") {
-    return <LandlordSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+    return <LandlordSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} onUserUpdate={onUserUpdate} />;
   }
 
   return (

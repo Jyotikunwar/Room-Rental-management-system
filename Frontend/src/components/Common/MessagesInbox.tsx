@@ -51,8 +51,11 @@ interface MessagesInboxProps {
   onBellClick?: () => void;
 }
 
+import { getImageUrl } from "../../services/api";
+
 function avatarUrl(name: string, url?: string) {
-  return url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+  const resolved = getImageUrl(url);
+  return resolved || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
 }
 
 function formatTime(iso: string) {

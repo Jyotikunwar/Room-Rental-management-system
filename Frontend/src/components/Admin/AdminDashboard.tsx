@@ -36,6 +36,7 @@ import AdminSettings from "./adminSettings";
 interface AdminDashboardProps {
   user: User;
   onLogout?: () => void;
+  onUserUpdate?: (user: User) => void;
 }
 
 interface AdminDashboardStats {
@@ -76,7 +77,7 @@ const EMPTY_STATS: AdminDashboardStats = {
   recentMoveOuts: 0,
 };
 
-export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
+export default function AdminDashboard({ user, onLogout, onUserUpdate }: AdminDashboardProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
@@ -213,7 +214,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     return <AdminReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "settings") {
-    return <AdminSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+    return <AdminSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} onUserUpdate={onUserUpdate} />;
   }
 
   return (
