@@ -1,9 +1,9 @@
 // src/components/Tenant/FindProperty.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
-  Search, Bell, Heart, Plus, Minus, LocateFixed,
+  Search, Bell, Heart,
   Grid2x2, List as ListIcon, MapPin, Star, X,
-  SlidersHorizontal, Map as MapIcon, Loader2, Sparkles,
+  SlidersHorizontal, Loader2, Sparkles,
 } from "lucide-react";
 import type { User, Room, RecommendationResult } from "../../services/api";
 import { api } from "../../services/api";
@@ -123,13 +123,6 @@ const LOCATION_COORDS: Record<string, { lat: number; lng: number }> = {
   Pokhara: { lat: 28.2096, lng: 83.9856 },
 };
 
-// Deterministic pseudo-position on the mock map so pins don't jump between renders.
-function mapPosition(id: number): { top: string; left: string } {
-  const top = 20 + ((id * 37) % 60);
-  const left = 60 + ((id * 53) % 35);
-  return { top: `${top}%`, left: `${left}%` };
-}
-
 export default function FindProperty({ user, onLogout, onNavigate }: FindPropertyProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendationResult[]>([]);
@@ -153,8 +146,6 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   const [maxDistanceMeters, setMaxDistanceMeters] = useState<number>(0);
   const [userLoc, setUserLoc] = useState<UserCoordinates | null>(getUserLocation());
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
-  const [mapMode, setMapMode] = useState<"map" | "satellite">("map");
 
   // --- View Details modal ---
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -528,13 +519,6 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
                 {activeFilterCount}
               </span>
             )}
-          </button>
-          <button
-            onClick={() => setMapOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-medium text-stone-700 xl:hidden"
-          >
-            <MapIcon size={13} />
-            Map
           </button>
         </div>
 
@@ -979,8 +963,6 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
               </>
             )}
           </section>
-
-          <MapPanel open={mapOpen} onClose={() => setMapOpen(false)} rooms={filtered} mode={mapMode} onModeChange={setMapMode} />
         </div>
       </div>
 
@@ -1013,127 +995,4 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
       )}
     </div>
   );
-}
-
-function MapContent({
-  rooms,
-  mode,
-  onModeChange,
-  zoom,
-  onZoomChange,
-}: {
-  rooms: Room[];
-  mode: "map" | "satellite";
-  onModeChange: (m: "map" | "satellite") => void;
-  zoom: number;
-  onZoomChange: (z: number) => void;
-}) {
-  const isSatellite = mode === "satellite";
-  return (
-    <div className={`relative h-full w-full overflow-hidden ${isSatellite ? "bg-stone-800" : "bg-blue-50"}`}>
-      <div
-        style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
-        className="absolute inset-0 transition-transform duration-200"
-      >
-        <div
-          className={`absolute inset-0 ${
-            isSatellite
-              ? "opacity-30 [background-image:linear-gradient(#4b5563_1px,transparent_1px),linear-gradient(90deg,#4b5563_1px,transparent_1px)]"
-              : "opacity-40 [background-image:linear-gradient(#c7d7f5_1px,transparent_1px),linear-gradient(90deg,#c7d7f5_1px,transparent_1px)]"
-          } [background-size:24px_24px]`}
-        />
-
-        {rooms.map((room) => {
-          const pos = mapPosition(room.id);
-          return (
-            <span
-              key={room.id}
-              style={{ top: pos.top, left: pos.left }}
-              className={`absolute -translate-x-1/2 -translate-y-full rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-md ${
-                isSatellite ? "bg-white text-stone-900" : "bg-stone-900 text-white"
-              }`}
-            >
-              Rs. {Math.round(room.price / 1000)}k
-            </span>
-          );
-        })}
-
-        <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-600 shadow" />
-      </div>
-
-      <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
-        <button
-          onClick={() => onZoomChange(Math.min(2.5, zoom + 0.25))}
-          className="flex h-8 w-8 items-center justify-center border-b border-stone-100 text-stone-500 hover:bg-stone-50"
-        >
-          <Plus size={14} />
-        </button>
-        <button
-          onClick={() => onZoomChange(Math.max(0.75, zoom - 0.25))}
-          className="flex h-8 w-8 items-center justify-center border-b border-stone-100 text-stone-500 hover:bg-stone-50"
-        >
-          <Minus size={14} />
-        </button>
-        <button
-          onClick={() => onZoomChange(1)}
-          className="flex h-8 w-8 items-center justify-center text-stone-500 hover:bg-stone-50"
-        >
-          <LocateFixed size={14} />
-        </button>
-      </div>
-
-      <div className="absolute bottom-3 left-3 flex overflow-hidden rounded-lg border border-stone-200 bg-white text-xs shadow-sm">
-        <button
-          onClick={() => onModeChange("map")}
-          className={mode === "map" ? "bg-stone-900 px-3 py-1.5 font-medium text-white" : "px-3 py-1.5 text-stone-500 hover:bg-stone-50"}
-        >
-          Map
-        </button>
-        <button
-          onClick={() => onModeChange("satellite")}
-          className={mode === "satellite" ? "bg-stone-900 px-3 py-1.5 font-medium text-white" : "px-3 py-1.5 text-stone-500 hover:bg-stone-50"}
-        >
-          Satellite
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function MapPanel({
-  open,
-  onClose,
-  rooms,
-  mode,
-  onModeChange,
-}: {
-  open: boolean;
-  onClose: () => void;
-  rooms: Room[];
-  mode: "map" | "satellite";
-  onModeChange: (m: "map" | "satellite") => void;
-}) {
-  const [zoom, setZoom] = useState(1);
-
-  return (
-    <>
-      <aside className="hidden w-80 shrink-0 border-l border-stone-200 xl:block">
-        <MapContent rooms={rooms} mode={mode} onModeChange={onModeChange} zoom={zoom} onZoomChange={setZoom} />
-      </aside>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex flex-col xl:hidden">
-          <div className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-3">
-            <span className="text-sm font-semibold">Map View</span>
-            <button onClick={onClose} className="text-stone-500 hover:text-stone-700">
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex-1">
-            <MapContent rooms={rooms} mode={mode} onModeChange={onModeChange} zoom={zoom} onZoomChange={setZoom} />
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
+}
