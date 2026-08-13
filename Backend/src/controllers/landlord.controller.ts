@@ -324,3 +324,75 @@ export const getLandlordActivity = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: "Failed to fetch activity log", error: message });
   }
 };
+
+// GET /api/landlord/reviews -> Fetch all reviews for rooms owned by the logged-in landlord
+export const getLandlordReviews = async (req: AuthRequest, res: Response) => {
+  try {
+    const landlordId = req.user!.id;
+
+    const [reviews, tenantBookings] = await Promise.all([
+      prisma.review.findMany({
+        where: { room: { landlordId } },
+        include: {
+          user: { select: { id: true, fullName: true, email: true } },
+          room: { select: { id: true, title: true, city: true, location: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.booking.findMany({
+        where: { room: { landlordId }, status: "APPROVED" },
+        include: {
+          tenant: { select: { id: true, fullName: true, email: true } },
+          room: { select: { id: true, title: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: reviews.length,
+      reviews,
+      tenantBookings,
+    });
+  } catch (error: unknown) {
+    console.error("Get landlord reviews error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch property reviews" });
+  }
+};
+
+// DELETE /api/landlord/reviews/:id -> Delete a review on landlord's property
+export const deleteLandlordReview = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const landlordId = req.user!.id;
+
+    const review = await prisma.review.findUnique({
+      where: { id: Number(id) },
+      include: { room: true },
+    });
+
+    if (!review) {
+      return res.status(404).json({ success: false, message: "Review not found" });
+    }
+
+    if (review.room.landlordId !== landlordId && req.user!.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized: You can only delete reviews for your own properties",
+      });
+    }
+
+    await prisma.review.delete({
+      where: { id: Number(id) },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Review deleted successfully",
+    });
+  } catch (error: unknown) {
+    console.error("Delete landlord review error:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete review" });
+  }
+};

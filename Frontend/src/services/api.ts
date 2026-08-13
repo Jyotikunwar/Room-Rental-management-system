@@ -844,6 +844,17 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/landlord/activity${query}`, { headers: getAuthHeaders() });
     return res.json();
   },
+  getLandlordReviews: async () => {
+    const res = await fetch(`${API_BASE_URL}/landlord/reviews`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  deleteLandlordReview: async (reviewId: number) => {
+    const res = await fetch(`${API_BASE_URL}/landlord/reviews/${reviewId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
   // NOTE: platform fee concept still not built — no model, no billing logic.
   getPlatformFeeStatus: async () => {
     const res = await fetch(`${API_BASE_URL}/landlord/platform-fee`, { headers: getAuthHeaders() });
