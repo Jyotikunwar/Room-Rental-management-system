@@ -244,7 +244,7 @@ export const updateIdentification = async (req: AuthRequest, res: Response) => {
         idNumber,
         isIdVerified: false, // any change to ID info resets verification — an admin re-checks it
       },
-      select: { id: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
+      select: { id: true, fullName: true, email: true, phone: true, role: true, avatarUrl: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
     });
 
     res.json({ success: true, user });
@@ -254,9 +254,7 @@ export const updateIdentification = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// POST /api/auth/me/identification/document (multipart/form-data, field name: "document")
-// Reuses the same multer setup as uploadRoomImages — adjust the field/path
-// to match however your upload.middleware.ts is configured.
+// POST /api/auth/me/identification/document or /api/auth/me/id-document
 export const uploadIdDocument = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -266,15 +264,15 @@ export const uploadIdDocument = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: "No document uploaded" });
     }
 
-    const documentUrl = `/uploads/identification/${file.filename}`;
+    const documentUrl = `/uploads/${file.filename}`;
 
     const user = await prisma.user.update({
       where: { id: userId },
       data: { idDocumentUrl: documentUrl, isIdVerified: false },
-      select: { id: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
+      select: { id: true, fullName: true, email: true, phone: true, role: true, avatarUrl: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
     });
 
-    res.json({ success: true, user });
+    res.json({ success: true, user, idDocumentUrl: documentUrl });
   } catch (error) {
     console.error("Upload ID document error:", error);
     res.status(500).json({ success: false, message: "Something went wrong" });

@@ -73,7 +73,7 @@ function validateIdNumber(idType: string, idNumber: string): string | null {
 export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPageProps) {
   const [fullName, setFullName] = useState(user.fullName ?? "");
   const [email] = useState(user.email ?? "");
-  const [phone, setPhone] = useState(user.phone ?? "");
+  const [phone] = useState(user.phone ?? "");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -184,8 +184,23 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
     try {
       const res = await api.updateIdentification({ idType, idNumber: idNumber.trim() });
       if (res.success === false) throw new Error(res.message || "Couldn't save your identification.");
-      setIsIdVerified(false); // any edit resets verification, matches backend behavior
-      setIdMessage({ text: "Identification saved. Pending verification.", ok: true });
+      
+      const updatedUser = res.user || { ...user, idType, idNumber: idNumber.trim() };
+      user.idType = updatedUser.idType;
+      user.idNumber = updatedUser.idNumber;
+      
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.idType = updatedUser.idType;
+          parsed.idNumber = updatedUser.idNumber;
+          localStorage.setItem("user", JSON.stringify(parsed));
+        } catch (e) {}
+      }
+
+      setIsIdVerified(false);
+      setIdMessage({ text: "Identification details saved successfully! Upload your document photo below to complete verification.", ok: true });
     } catch (err) {
       setIdMessage({ text: err instanceof Error ? err.message : "Couldn't save your identification.", ok: false });
     } finally {
@@ -201,9 +216,23 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       formData.append("document", file);
       const res = await api.uploadIdDocument(formData);
       if (res.success === false) throw new Error(res.message || "Couldn't upload the document.");
-      setIdDocumentUrl(res.user?.idDocumentUrl ?? "");
+      
+      const newDocUrl = res.user?.idDocumentUrl ?? res.idDocumentUrl ?? "";
+      setIdDocumentUrl(newDocUrl);
+
+      user.idDocumentUrl = newDocUrl;
+
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.idDocumentUrl = newDocUrl;
+          localStorage.setItem("user", JSON.stringify(parsed));
+        } catch (e) {}
+      }
+
       setIsIdVerified(false);
-      setIdMessage({ text: "Document uploaded. Pending verification.", ok: true });
+      setIdMessage({ text: "ID Document uploaded & saved successfully! You are now eligible to book rooms.", ok: true });
     } catch (err) {
       setIdMessage({ text: err instanceof Error ? err.message : "Couldn't upload the document.", ok: false });
     } finally {
@@ -314,13 +343,12 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500 sm:col-span-2">
-                Phone Number
+                Phone Number (Set from Signup)
                 <input
                   type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="98XXXXXXXX"
-                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                  value={phone || "Not set"}
+                  disabled
+                  className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-400 outline-none cursor-not-allowed"
                 />
               </label>
               <div className="flex items-center gap-3 sm:col-span-2">

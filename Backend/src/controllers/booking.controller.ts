@@ -16,6 +16,16 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Check if tenant has updated and completed their profile before booking
+    const tenantUser = await prisma.user.findUnique({ where: { id: tenantId } });
+    if (!tenantUser?.fullName || !tenantUser?.avatarUrl || !tenantUser?.idType || !tenantUser?.idNumber || !tenantUser?.idDocumentUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile incomplete! Please update your Profile Information (Full Name & Profile Picture) and complete Identity Verification in Settings before booking a room.",
+        requiresProfileUpdate: true,
+      });
+    }
+
     const room = await prisma.room.findUnique({
       where: { id: Number(roomId) },
     });

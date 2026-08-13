@@ -39,6 +39,19 @@ router.get("/me/notification-preferences", authenticate, getNotificationPreferen
 router.patch("/me/notification-preferences", authenticate, updateNotificationPreferences);
 
 router.patch("/me/identification", authenticate, updateIdentification);
-router.post("/me/identification/document", authenticate, upload.single("document"), uploadIdDocument);
+
+// Support both /me/identification/document and /me/id-document for frontend compatibility
+const handleDocUpload = (req: any, res: any, next: any) => {
+  upload.any()(req, res, (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message });
+    if (req.files && req.files.length > 0) {
+      req.file = req.files[0];
+    }
+    next();
+  });
+};
+
+router.post("/me/identification/document", authenticate, handleDocUpload, uploadIdDocument);
+router.post("/me/id-document", authenticate, handleDocUpload, uploadIdDocument);
 
 export default router;

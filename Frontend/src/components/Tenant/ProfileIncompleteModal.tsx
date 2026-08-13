@@ -1,4 +1,4 @@
-import { AlertTriangle, Settings, X, ArrowRight } from "lucide-react";
+import { ShieldAlert, Settings, X, ArrowRight } from "lucide-react";
 
 interface ProfileIncompleteModalProps {
   missingSections: string[];
@@ -13,10 +13,10 @@ export default function ProfileIncompleteModal({
 }: ProfileIncompleteModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl transition-all border border-amber-100">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl transition-all border border-amber-200">
         <div className="flex items-start justify-between">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-600 shadow-sm">
-            <AlertTriangle size={24} />
+            <ShieldAlert size={24} />
           </div>
           <button
             onClick={onClose}
@@ -27,14 +27,14 @@ export default function ProfileIncompleteModal({
         </div>
 
         <div className="mt-4">
-          <h3 className="text-lg font-bold text-stone-900">Complete Profile to Book</h3>
+          <h3 className="text-lg font-bold text-stone-900">Identity Verification Required to Book</h3>
           <p className="mt-1 text-xs sm:text-sm text-stone-600 leading-relaxed">
-            Before booking a property, you must complete your <strong>Profile Information</strong>, <strong>Enter Location</strong>, and <strong>Identity Verification</strong> in Settings.
+            Room book garna agi tapaile <strong>Settings</strong> ma gayera aafno <strong>Identity Verification (ID Type, ID Number & Document Photo Upload)</strong> complete gareko huna parchha.
           </p>
 
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3.5">
             <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
-              Incomplete Sections Required:
+              Required Verification Details:
             </p>
             <ul className="mt-2 space-y-2">
               {missingSections.map((sec, idx) => (
@@ -63,7 +63,7 @@ export default function ProfileIncompleteModal({
             className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all"
           >
             <Settings size={15} />
-            Go to Settings to Fill
+            Go to Settings to Complete Verification
             <ArrowRight size={15} />
           </button>
         </div>

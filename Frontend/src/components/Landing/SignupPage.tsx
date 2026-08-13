@@ -54,8 +54,8 @@ function validateSignup(values: SignupFormValues): FieldErrors {
     errors.email = "Email must end with @gmail.com";
   }
 
-  if (!/^[0-9]{10}$/.test(values.phone.trim())) {
-    errors.phone = "Phone number must be exactly 10 digits";
+  if (values.phone.trim() && !/^[0-9]{10}$/.test(values.phone.trim())) {
+    errors.phone = "Phone number must be 10 digits if provided";
   }
 
   if (values.password.length < 8) {
@@ -209,12 +209,12 @@ export default function SignupPage({ onSignup, onNavigateToLogin }: SignupPagePr
             </div>
 
             <div>
-              <FormField label="Phone Number" icon={<Phone size={15} />}>
+              <FormField label="Phone Number (Optional)" icon={<Phone size={15} />}>
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="10-digit phone number"
+                  placeholder="10-digit phone number (optional)"
                   className="w-full bg-transparent text-sm outline-none placeholder:text-stone-400"
                 />
               </FormField>

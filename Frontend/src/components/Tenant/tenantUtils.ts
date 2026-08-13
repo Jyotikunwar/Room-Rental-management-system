@@ -82,14 +82,12 @@ export function getMissingTenantProfileSections(user?: {
 
   if (!user) return ["Profile Information (Name, Phone & Profile Picture)", "Enter Location", "Identity Verification (Type, Number & Document Photo)"];
 
-  // 1. Profile Information (Full Name, Phone & Profile Picture)
+  // 1. Profile Information (Full Name & Profile Picture)
   const hasName = Boolean(user.fullName?.trim());
-  const hasPhone = Boolean(user.phone?.trim());
   const hasAvatar = Boolean(user.avatarUrl?.trim());
 
   const profileItemsMissing: string[] = [];
   if (!hasName) profileItemsMissing.push("Full Name");
-  if (!hasPhone) profileItemsMissing.push("Phone Number");
   if (!hasAvatar) profileItemsMissing.push("Profile Picture");
 
   if (profileItemsMissing.length > 0) {
