@@ -1000,6 +1000,14 @@ export const api = {
     });
     return res.json();
   },
+  createRentInvoice: async (data: { bookingId: number; amount: number; dueDate: string; periodStart: string; periodEnd: string }) => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/create`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
 
   // Maintenance — backed by your real Complaint model at /api/complaints.
   getMaintenanceRequests: async (params?: { status?: string; priority?: string }) => {
