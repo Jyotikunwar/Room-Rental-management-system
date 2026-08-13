@@ -116,7 +116,7 @@ function itemMatchesFilter(_mode: MessagesMode, filter: ContactFilter, role: str
   return true;
 }
 
-export default function MessagesInbox({ mode, user, sidebar, topSearchPlaceholder, onBellClick }: MessagesInboxProps) {
+export default function MessagesInbox({ mode, user: _user, sidebar, topSearchPlaceholder, onBellClick }: MessagesInboxProps) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [adminThreads, setAdminThreads] = useState<AdminMessageThread[]>([]);
   const [convLoading, setConvLoading] = useState(true);
@@ -307,6 +307,12 @@ export default function MessagesInbox({ mode, user, sidebar, topSearchPlaceholde
       return matchesQuery && matchesFilterRole;
     });
   }, [listItems, query, filter, mode]);
+
+  useEffect(() => {
+    if (!convLoading && selectedId === null && listItems.length > 0 && typeof window !== "undefined" && window.innerWidth >= 768) {
+      setSelectedId(listItems[0].id);
+    }
+  }, [convLoading, listItems, selectedId]);
 
   const totalUnread = listItems.reduce((sum, c) => sum + c.unread, 0);
   const isFromMe = (m: ChatMessage | AdminThreadMessage) =>
