@@ -205,3 +205,50 @@ export const sendRentReminder = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: "Failed to send reminder" });
   }
 };
+
+// POST /api/rent-invoices/:id/confirm-cash (protected - LANDLORD)
+export const confirmLandlordCashReceived = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const landlordId = req.user!.id;
+
+    const invoice = await prisma.rentInvoice.findUnique({
+      where: { id: Number(id) },
+      include: { booking: { include: { room: true, tenant: true } } },
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: "Invoice not found" });
+    }
+    if (invoice.booking.room.landlordId !== landlordId) {
+      return res.status(403).json({ success: false, message: "Not authorized for this invoice" });
+    }
+    if (invoice.status === "PAID") {
+      return res.status(400).json({ success: false, message: "This invoice is already marked as paid" });
+    }
+
+    const updated = await prisma.rentInvoice.update({
+      where: { id: Number(id) },
+      data: {
+        status: "PAID",
+        paymentMethod: "CASH" as any,
+        transactionId: `CASH-REC-${Date.now()}-${invoice.id}`,
+        paidAt: new Date(),
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: invoice.booking.tenantId,
+        title: "Cash Payment Confirmed",
+        message: `Your cash payment of Rs. ${invoice.amount.toLocaleString()} for ${invoice.booking.room.title} has been confirmed by your landlord.`,
+        type: "PAYMENT",
+      },
+    });
+
+    return res.status(200).json({ success: true, message: "Cash payment confirmed successfully", invoice: updated });
+  } catch (error) {
+    console.error("Confirm landlord cash received error:", error);
+    return res.status(500).json({ success: false, message: "Failed to confirm cash payment" });
+  }
+};

@@ -298,7 +298,7 @@ function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
       </select>
 
       <button onClick={handlePay} disabled={paying} className="mt-3 w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60">
-        {paying ? "Processing..." : "Pay Now"}
+        {paying ? "Processing..." : "Pay via Cash"}
       </button>
     </div>
   );

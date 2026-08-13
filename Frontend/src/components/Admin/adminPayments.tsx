@@ -101,7 +101,7 @@ export default function AdminPayments({ user: _user, onLogout, activeRoute, onNa
   const [paymentForm, setPaymentForm] = useState({
     bookingId: "",
     amount: "",
-    paymentMethod: "eSewa",
+    paymentMethod: "Cash",
     status: "PAID",
     transactionId: "",
   });
@@ -215,7 +215,7 @@ export default function AdminPayments({ user: _user, onLogout, activeRoute, onNa
         setPaymentForm({
           bookingId: "",
           amount: "",
-          paymentMethod: "eSewa",
+          paymentMethod: "Cash",
           status: "PAID",
           transactionId: "",
         });
@@ -812,9 +812,6 @@ export default function AdminPayments({ user: _user, onLogout, activeRoute, onNa
                     onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
                     className="w-full rounded-2xl border border-gray-200 bg-white p-2.5 text-xs font-bold text-gray-900 outline-none focus:border-gray-900"
                   >
-                    <option value="eSewa">eSewa</option>
-                    <option value="Khalti">Khalti</option>
-                    <option value="Bank Transfer">Bank Transfer</option>
                     <option value="Cash">Cash</option>
                   </select>
                 </div>

@@ -957,6 +957,13 @@ export const api = {
     });
     return res.json();
   },
+  confirmLandlordCashReceived: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/${id}/confirm-cash`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
 
   // Maintenance — backed by your real Complaint model at /api/complaints.
   getMaintenanceRequests: async (params?: { status?: string; priority?: string }) => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, ChevronDown, ChevronLeft, ChevronRight, Download, Wallet, TrendingUp, Clock, AlertTriangle } from "lucide-react";
+import { Search, ChevronDown, ChevronLeft, ChevronRight, Download, Wallet, TrendingUp, Clock, AlertTriangle, Check } from "lucide-react";
 import { api, type RentInvoice, type LandlordInvoiceStats, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 
@@ -41,6 +41,7 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
   const [propertyFilter, setPropertyFilter] = useState("ALL");
   const [page, setPage] = useState(1);
   const [remindingId, setRemindingId] = useState<number | null>(null);
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
   useEffect(() => {
     loadData();
@@ -84,12 +85,13 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
 
   function handleExport() {
     const rows = [
-      ["Tenant", "Property", "Rent Month", "Amount", "Due Date", "Payment Date", "Status"],
+      ["Tenant", "Property", "Rent Month", "Amount", "Method", "Due Date", "Payment Date", "Status"],
       ...filtered.map((inv) => [
         inv.booking?.tenant?.fullName || "",
         inv.booking?.room?.title || "",
         monthLabel(inv.periodStart),
         inv.amount.toString(),
+        "Cash",
         new Date(inv.dueDate).toLocaleDateString(),
         inv.paidAt ? new Date(inv.paidAt).toLocaleDateString() : "",
         inv.effectiveStatus,
@@ -116,6 +118,23 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
     }
   }
 
+  async function handleConfirmCash(invoiceId: number) {
+    setConfirmingId(invoiceId);
+    try {
+      const res = await api.confirmLandlordCashReceived(invoiceId);
+      if (res.success) {
+        loadData();
+      } else {
+        alert(res.message || "Failed to confirm cash payment.");
+      }
+    } catch (e) {
+      console.error("Failed to confirm cash payment:", e);
+      alert("Error connecting to server.");
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
   const summaryCards = [
     { label: "Total Revenue", value: `Rs. ${stats.totalRevenue.toLocaleString()}`, icon: Wallet, iconBg: "bg-blue-50 text-blue-600" },
     { label: "This Month's Income", value: `Rs. ${stats.monthlyCollections.toLocaleString()}`, icon: TrendingUp, iconBg: "bg-green-50 text-green-600" },
@@ -129,7 +148,7 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
       <div className="flex-1 p-4 sm:p-6">
         <div className="mb-6">
           <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Payments Management</h1>
-          <p className="mt-1 text-sm text-gray-500">Track and manage recurring rent payments from your tenants.</p>
+          <p className="mt-1 text-sm text-gray-500">Track cash payments and confirm rent received from your tenants.</p>
         </div>
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -185,6 +204,7 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
                       <th className="pb-3 font-medium">Property</th>
                       <th className="pb-3 font-medium">Rent Month</th>
                       <th className="pb-3 font-medium">Amount</th>
+                      <th className="pb-3 font-medium">Method</th>
                       <th className="pb-3 font-medium">Due Date</th>
                       <th className="pb-3 font-medium">Payment Date</th>
                       <th className="pb-3 font-medium">Status</th>
@@ -197,7 +217,8 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
                         <td className="py-3 font-medium text-gray-900">{inv.booking?.tenant?.fullName || "—"}</td>
                         <td className="py-3 text-gray-700">{inv.booking?.room?.title || "—"}</td>
                         <td className="py-3 text-gray-700">{monthLabel(inv.periodStart)}</td>
-                        <td className="py-3 text-gray-700">Rs. {inv.amount.toLocaleString()}</td>
+                        <td className="py-3 font-semibold text-gray-900">Rs. {inv.amount.toLocaleString()}</td>
+                        <td className="py-3 text-xs text-gray-600 font-medium">Cash</td>
                         <td className="py-3 text-gray-500">{new Date(inv.dueDate).toLocaleDateString()}</td>
                         <td className="py-3 text-gray-500">{inv.paidAt ? new Date(inv.paidAt).toLocaleDateString() : "—"}</td>
                         <td className="py-3">
@@ -207,15 +228,25 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
                         </td>
                         <td className="py-3 text-right">
                           {inv.effectiveStatus === "PENDING" || inv.effectiveStatus === "OVERDUE" ? (
-                            <button
-                              onClick={() => handleRemind(inv.id)}
-                              disabled={remindingId === inv.id}
-                              className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
-                            >
-                              {remindingId === inv.id ? "Sending..." : "Remind"}
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleConfirmCash(inv.id)}
+                                disabled={confirmingId === inv.id}
+                                className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                <Check size={12} />
+                                {confirmingId === inv.id ? "Confirming..." : "Mark Cash Received"}
+                              </button>
+                              <button
+                                onClick={() => handleRemind(inv.id)}
+                                disabled={remindingId === inv.id}
+                                className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+                              >
+                                {remindingId === inv.id ? "Sending..." : "Remind"}
+                              </button>
+                            </div>
                           ) : (
-                            <span className="text-xs text-gray-400">Paid</span>
+                            <span className="text-xs text-emerald-600 font-medium">Received (Cash)</span>
                           )}
                         </td>
                       </tr>
@@ -237,17 +268,27 @@ export default function LandlordPayments({ user, onLogout, activeRoute, onNaviga
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between text-xs">
-                      <span className="text-gray-500">Due {new Date(inv.dueDate).toLocaleDateString()}</span>
+                      <span className="text-gray-500">Due {new Date(inv.dueDate).toLocaleDateString()} (Cash)</span>
                       <span className="font-medium text-gray-900">Rs. {inv.amount.toLocaleString()}</span>
                     </div>
                     {(inv.effectiveStatus === "PENDING" || inv.effectiveStatus === "OVERDUE") && (
-                      <button
-                        onClick={() => handleRemind(inv.id)}
-                        disabled={remindingId === inv.id}
-                        className="mt-2 text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
-                      >
-                        {remindingId === inv.id ? "Sending..." : "Send Reminder"}
-                      </button>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => handleConfirmCash(inv.id)}
+                          disabled={confirmingId === inv.id}
+                          className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <Check size={12} />
+                          {confirmingId === inv.id ? "Confirming..." : "Mark Cash Received"}
+                        </button>
+                        <button
+                          onClick={() => handleRemind(inv.id)}
+                          disabled={remindingId === inv.id}
+                          className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+                        >
+                          {remindingId === inv.id ? "Sending..." : "Send Reminder"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
