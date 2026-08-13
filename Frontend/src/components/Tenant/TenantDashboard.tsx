@@ -12,7 +12,9 @@ import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
 import RoomDetailsModal from "./RoomDetailsModal";
 import BookingModal from "./BookingModal";
+import ProfileIncompleteModal from "./ProfileIncompleteModal";
 import { formatMatchPercent, getRoomPrimaryImageUrl } from "./roomDisplayUtils";
+import { getMissingTenantProfileSections } from "./tenantUtils";
 
 interface TenantDashboardProps {
   user: User;
@@ -70,6 +72,8 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [missingSections, setMissingSections] = useState<string[]>([]);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   const loadDashboard = useCallback(() => {
     setLoading(true);
@@ -203,6 +207,12 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
   const openDetails = (room: Room) => setSelectedRoom(room);
 
   const openBooking = (room: Room) => {
+    const missing = getMissingTenantProfileSections(user);
+    if (missing.length > 0) {
+      setMissingSections(missing);
+      setProfileModalOpen(true);
+      return;
+    }
     setSelectedRoom(null);
     setBookingRoom(room);
     setBookingMoveInDate("");
@@ -593,6 +603,18 @@ export default function TenantDashboard({ user, onLogout, onNavigate }: TenantDa
           onSubmit={submitBooking}
           onClose={closeBooking}
           onGoToMyRequests={goToMyRequests}
+        />
+      )}
+
+      {/* ---- Profile Incomplete Redirect Modal ---- */}
+      {profileModalOpen && (
+        <ProfileIncompleteModal
+          missingSections={missingSections}
+          onClose={() => setProfileModalOpen(false)}
+          onGoToSettings={() => {
+            setProfileModalOpen(false);
+            onNavigate("settings");
+          }}
         />
       )}
     </div>

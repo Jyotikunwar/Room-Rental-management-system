@@ -13,6 +13,8 @@ import Avatar from "../Avatar";
 import { resolveImageUrl, avgRating, formatMatchPercent } from "./roomDisplayUtils";
 import RoomDetailsModal from "./RoomDetailsModal";
 import BookingModal from "./BookingModal";
+import ProfileIncompleteModal from "./ProfileIncompleteModal";
+import { getMissingTenantProfileSections } from "./tenantUtils";
 
 interface FindPropertyProps {
   user: User;
@@ -146,6 +148,8 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   const [maxDistanceMeters, setMaxDistanceMeters] = useState<number>(0);
   const [userLoc, setUserLoc] = useState<UserCoordinates | null>(getUserLocation());
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [missingSections, setMissingSections] = useState<string[]>([]);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // --- View Details modal ---
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -315,6 +319,12 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
   const openDetails = (room: Room) => setSelectedRoom(room);
 
   const openBooking = (room: Room) => {
+    const missing = getMissingTenantProfileSections(user);
+    if (missing.length > 0) {
+      setMissingSections(missing);
+      setProfileModalOpen(true);
+      return;
+    }
     setSelectedRoom(null);
     setBookingRoom(room);
     setMoveInDate("");
@@ -991,6 +1001,18 @@ export default function FindProperty({ user, onLogout, onNavigate }: FindPropert
           onSubmit={submitBooking}
           onClose={closeBooking}
           onGoToMyRequests={goToMyRequests}
+        />
+      )}
+
+      {/* ---- Profile Incomplete Redirect Modal ---- */}
+      {profileModalOpen && (
+        <ProfileIncompleteModal
+          missingSections={missingSections}
+          onClose={() => setProfileModalOpen(false)}
+          onGoToSettings={() => {
+            setProfileModalOpen(false);
+            onNavigate("settings");
+          }}
         />
       )}
     </div>

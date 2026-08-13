@@ -8,6 +8,8 @@ import { api } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
+import ProfileIncompleteModal from "./ProfileIncompleteModal";
+import { getMissingTenantProfileSections } from "./tenantUtils";
 interface SavedRoomsProps {
   user: User;
   onLogout: () => void;
@@ -78,6 +80,8 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [missingSections, setMissingSections] = useState<string[]>([]);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // ---- Contact owner modal ----
   const [contactRoom, setContactRoom] = useState<Room | null>(null);
@@ -134,6 +138,12 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
   const openDetails = (room: Room) => setSelectedRoom(room);
 
   const openBooking = (room: Room) => {
+    const missing = getMissingTenantProfileSections(user);
+    if (missing.length > 0) {
+      setMissingSections(missing);
+      setProfileModalOpen(true);
+      return;
+    }
     setSelectedRoom(null);
     setBookingRoom(room);
     setMoveInDate("");
@@ -501,6 +511,18 @@ export default function SavedRooms({ user, onLogout, onNavigate }: SavedRoomsPro
           onSubmit={submitBooking}
           onClose={closeBooking}
           onGoToMyRequests={goToMyRequests}
+        />
+      )}
+
+      {/* ---- Profile Incomplete Redirect Modal ---- */}
+      {profileModalOpen && (
+        <ProfileIncompleteModal
+          missingSections={missingSections}
+          onClose={() => setProfileModalOpen(false)}
+          onGoToSettings={() => {
+            setProfileModalOpen(false);
+            onNavigate("settings");
+          }}
         />
       )}
 

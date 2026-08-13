@@ -69,3 +69,52 @@ export type NavKey =
   | "Payments"
   | "Messages"
   | "Notifications";
+
+export function getMissingTenantProfileSections(user?: {
+  fullName?: string | null;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  idType?: string | null;
+  idNumber?: string | null;
+  idDocumentUrl?: string | null;
+} | null): string[] {
+  const missing: string[] = [];
+
+  if (!user) return ["Profile Information (Name, Phone & Profile Picture)", "Enter Location", "Identity Verification (Type, Number & Document Photo)"];
+
+  // 1. Profile Information (Full Name, Phone & Profile Picture)
+  const hasName = Boolean(user.fullName?.trim());
+  const hasPhone = Boolean(user.phone?.trim());
+  const hasAvatar = Boolean(user.avatarUrl?.trim());
+
+  const profileItemsMissing: string[] = [];
+  if (!hasName) profileItemsMissing.push("Full Name");
+  if (!hasPhone) profileItemsMissing.push("Phone Number");
+  if (!hasAvatar) profileItemsMissing.push("Profile Picture");
+
+  if (profileItemsMissing.length > 0) {
+    missing.push(`Profile Information (${profileItemsMissing.join(", ")})`);
+  }
+
+  // 2. Enter Location
+  const locSaved = localStorage.getItem("userLocation");
+  if (!locSaved) {
+    missing.push("Enter Location");
+  }
+
+  // 3. Identity Verification (Document Type, Number & Document Photo)
+  const hasIdType = Boolean(user.idType);
+  const hasIdNum = Boolean(user.idNumber?.trim());
+  const hasIdDoc = Boolean(user.idDocumentUrl?.trim());
+
+  const idItemsMissing: string[] = [];
+  if (!hasIdType) idItemsMissing.push("Document Type");
+  if (!hasIdNum) idItemsMissing.push("Document Number");
+  if (!hasIdDoc) idItemsMissing.push("Document Photo");
+
+  if (idItemsMissing.length > 0) {
+    missing.push(`Identity Verification (${idItemsMissing.join(", ")})`);
+  }
+
+  return missing;
+}

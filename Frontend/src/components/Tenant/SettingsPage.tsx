@@ -9,6 +9,7 @@ import { api } from "../../services/api";
 import type { TenantView } from "./navigation";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import EnterLocationSection from "./EnterLocationSection";
+import Avatar from "../Avatar";
 
 const LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
   "Dashboard": "dashboard",
@@ -220,7 +221,19 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       formData.append("avatar", file);
       const res = await api.uploadAvatar(formData);
       if (res.success === false) throw new Error(res.message || "Couldn't upload photo.");
-      setAvatarUrl(res.user?.avatarUrl ?? res.avatarUrl ?? "");
+      const newUrl = res.user?.avatarUrl ?? res.avatarUrl ?? "";
+      setAvatarUrl(newUrl);
+      user.avatarUrl = newUrl;
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          parsed.avatarUrl = newUrl;
+          localStorage.setItem("user", JSON.stringify(parsed));
+        } catch (e) {
+          console.error("Failed to update user in localStorage", e);
+        }
+      }
     } catch (err) {
       setAvatarError(err instanceof Error ? err.message : "Couldn't upload photo.");
     } finally {
@@ -316,13 +329,9 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <button onClick={() => onNavigate("notifications")} className="text-stone-400 hover:text-stone-600" aria-label="Notifications">
               <Bell size={19} />
             </button>
-            <button className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200" aria-label="Account">
-              <img
-                src={avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-                alt={user.fullName}
-                className="h-full w-full object-cover"
-              />
-            </button>
+            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
+              <Avatar name={user.fullName ?? "U"} avatarUrl={avatarUrl || user.avatarUrl} size={32} />
+            </div>
           </div>
         </div>
 
@@ -348,11 +357,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
 
             <div className="mb-5 flex items-center gap-4">
               <div className="relative">
-                <img
-                  src={avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${fullName || "U"}`}
-                  alt={fullName}
-                  className="h-16 w-16 rounded-full bg-stone-200 object-cover"
-                />
+                <Avatar name={fullName || "U"} avatarUrl={avatarUrl || user.avatarUrl} size={64} />
                 <label
                   className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-stone-900 text-white hover:bg-stone-800"
                   aria-label="Change photo"

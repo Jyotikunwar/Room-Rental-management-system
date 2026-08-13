@@ -1,3 +1,5 @@
+import { getImageUrl } from "../services/api";
+
 interface AvatarProps {
   name: string;
   avatarUrl?: string | null;
@@ -33,13 +35,14 @@ function getColor(name: string) {
 
 // Renders the person's uploaded photo if there is one (served from our own
 // backend, so still no third-party network call). Otherwise renders their
-// initials on a colored circle — pure CSS, zero network requests, instant
-// on every page load (this is what replaced the Dicebear calls).
+// initials on a colored circle.
 export default function Avatar({ name, avatarUrl, size = 32, className = "" }: AvatarProps) {
-  if (avatarUrl) {
+  const resolvedUrl = getImageUrl(avatarUrl);
+
+  if (resolvedUrl) {
     return (
       <img
-        src={avatarUrl}
+        src={resolvedUrl}
         alt={name}
         className={`shrink-0 rounded-full object-cover ${className}`}
         style={{ width: size, height: size }}
