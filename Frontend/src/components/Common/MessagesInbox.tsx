@@ -3,7 +3,6 @@ import {
   Search,
   Bell,
   Plus,
-  Phone,
   User as UserIcon,
   MoreVertical,
   Paperclip,
@@ -16,7 +15,6 @@ import {
   Wrench,
   Banknote,
   X,
-  FileText,
   CheckCheck,
 } from "lucide-react";
 import {
@@ -166,13 +164,14 @@ export default function MessagesInbox({ mode, user: _user, sidebar, topSearchPla
   };
 
   useEffect(() => {
-    if (mode === "admin") {
-      const stored = sessionStorage.getItem(ADMIN_MESSAGE_CONTACT_KEY);
-      if (stored) {
-        const id = Number(stored);
-        if (!Number.isNaN(id)) setSelectedId(id);
-        sessionStorage.removeItem(ADMIN_MESSAGE_CONTACT_KEY);
-      }
+    const storedAdmin = sessionStorage.getItem(ADMIN_MESSAGE_CONTACT_KEY);
+    const storedTenant = sessionStorage.getItem("tenantMessageContactId");
+    const stored = mode === "admin" ? storedAdmin : storedTenant || storedAdmin;
+    if (stored) {
+      const id = Number(stored);
+      if (!Number.isNaN(id)) setSelectedId(id);
+      sessionStorage.removeItem(ADMIN_MESSAGE_CONTACT_KEY);
+      sessionStorage.removeItem("tenantMessageContactId");
     }
     loadConversations();
   }, [mode]);
@@ -461,11 +460,6 @@ export default function MessagesInbox({ mode, user: _user, sidebar, topSearchPla
                       {displayContact!.isOnline ? "Online" : "Offline"}
                     </p>
                   </div>
-                  {displayContact!.phone && (
-                    <a href={`tel:${displayContact!.phone}`} className="rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50">
-                      <Phone size={15} />
-                    </a>
-                  )}
                   <button className="rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50">
                     <UserIcon size={15} />
                   </button>
@@ -558,29 +552,16 @@ export default function MessagesInbox({ mode, user: _user, sidebar, topSearchPla
                   {roleLabel(displayContact!.role)}
                 </span>
 
-                <div className="mt-5 flex w-full gap-2">
-                  {displayContact!.phone && (
-                    <a
-                      href={`tel:${displayContact!.phone}`}
-                      className="flex flex-1 items-center justify-center rounded-full border border-gray-200 p-2.5 text-gray-600 hover:bg-gray-50"
-                    >
-                      <Phone size={16} />
-                    </a>
-                  )}
+                <div className="mt-5 flex w-full justify-center">
                   <a
                     href={`mailto:${displayContact!.email}`}
-                    className="flex flex-1 items-center justify-center rounded-full border border-gray-200 p-2.5 text-gray-600 hover:bg-gray-50"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-full border border-gray-200 p-2.5 text-xs text-gray-600 hover:bg-gray-50"
                   >
-                    <Mail size={16} />
+                    <Mail size={16} /> Send Email
                   </a>
                 </div>
 
                 <div className="mt-4 flex w-full flex-col gap-2 text-left text-xs text-gray-600">
-                  {displayContact!.phone && (
-                    <span className="flex items-center gap-2">
-                      <Phone size={12} className="text-gray-400" /> {displayContact!.phone}
-                    </span>
-                  )}
                   <span className="flex items-center gap-2 truncate">
                     <Mail size={12} className="shrink-0 text-gray-400" /> {displayContact!.email}
                   </span>
@@ -605,28 +586,6 @@ export default function MessagesInbox({ mode, user: _user, sidebar, topSearchPla
                         </p>
                       )}
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {mode === "tenant" && (
-                <div className="mt-5 border-t border-gray-100 pt-4">
-                  <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">Recent Documents</p>
-                  <div className="space-y-2">
-                    {thread.property ? (
-                      <>
-                        <div className="flex items-center gap-2 rounded-lg border border-gray-100 p-2.5 text-xs text-gray-600">
-                          <FileText size={14} className="shrink-0 text-red-500" />
-                          <span className="truncate">Lease_Agreement.pdf</span>
-                        </div>
-                        <div className="flex items-center gap-2 rounded-lg border border-gray-100 p-2.5 text-xs text-gray-600">
-                          <FileText size={14} className="shrink-0 text-red-500" />
-                          <span className="truncate">Move_In_Checklist.pdf</span>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-xs text-gray-400">No documents available.</p>
-                    )}
                   </div>
                 </div>
               )}

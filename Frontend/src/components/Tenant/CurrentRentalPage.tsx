@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Bell, MapPin, Wallet, Wrench, Phone,
+  Bell, MapPin, Wallet, Wrench,
   MessageSquare, ChevronRight,
   AlertTriangle, X, Loader2, Search,
   Star, Send, CheckCircle2, UserCheck, Pencil,
@@ -129,7 +129,7 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
 
               <div className="flex flex-col gap-6">
                 <PaymentDueCard payment={payments.find((p) => p.status !== "PAID")} />
-                <OwnerCard rental={rental} />
+                <OwnerCard rental={rental} onNavigate={onNavigate} />
                 <ActionsCard onComingSoon={showComingSoon} />
               </div>
             </div>
@@ -485,7 +485,7 @@ function PaymentDueCard({ payment }: { payment?: Payment }) {
   );
 }
 
-function OwnerCard({ rental }: { rental: Booking }) {
+function OwnerCard({ rental, onNavigate }: { rental: Booking; onNavigate: (view: TenantView) => void }) {
   const landlord = rental.room?.landlord;
   if (!landlord) return null;
 
@@ -499,18 +499,12 @@ function OwnerCard({ rental }: { rental: Booking }) {
           <p className="truncate text-xs text-stone-400">{landlord.email}</p>
         </div>
       </div>
-      <div className="mt-4 flex gap-2">
-        {landlord.phone ? (
-          <a href={`tel:${landlord.phone}`} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50">
-            <Phone size={13} /> Call
-          </a>
-        ) : (
-          <span className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-100 py-2 text-xs font-medium text-stone-300">
-            <Phone size={13} /> No number
-          </span>
-        )}
-        <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-stone-900 py-2 text-xs font-medium text-white hover:bg-stone-800">
-          <MessageSquare size={13} /> Message
+      <div className="mt-4">
+        <button
+          onClick={() => onNavigate("messages")}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-stone-900 py-2 text-xs font-medium text-white hover:bg-stone-800 transition-colors cursor-pointer"
+        >
+          <MessageSquare size={13} /> Message Owner
         </button>
       </div>
     </div>
