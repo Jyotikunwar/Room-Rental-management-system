@@ -53,7 +53,7 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
   const [payModalOpen, setPayModalOpen] = useState(false);
-  const [payMethod, setPayMethod] = useState<Payment["paymentMethod"]>("ESEWA");
+  const [payMethod, setPayMethod] = useState<Payment["paymentMethod"]>("CASH");
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
@@ -296,7 +296,7 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
             </div>
 
             <div className="mb-4 flex flex-col gap-2">
-              {(["ESEWA", "KHALTI", "BANK", "CASH"] as Payment["paymentMethod"][]).map((m) => {
+              {(["CASH"] as Payment["paymentMethod"][]).map((m) => {
                 const Icon = METHOD_ICON[m];
                 return (
                   <button

@@ -127,8 +127,8 @@ export const payRentInvoice = async (req: AuthRequest, res: Response) => {
     const { paymentMethod } = req.body;
     const tenantId = req.user!.id;
 
-    if (!paymentMethod || !["ESEWA", "KHALTI", "CASH", "BANK"].includes(paymentMethod)) {
-      return res.status(400).json({ success: false, message: "Valid paymentMethod is required" });
+    if (!paymentMethod || !["CASH"].includes(paymentMethod)) {
+      return res.status(400).json({ success: false, message: "Valid paymentMethod (CASH) is required" });
     }
 
     const invoice = await prisma.rentInvoice.findUnique({

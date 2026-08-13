@@ -241,7 +241,7 @@ function MaintenanceCard({ rental, onNewRequest }: { rental: Booking; onNewReque
 }
 
 function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
-  const [payingMethod, setPayingMethod] = useState<Payment["paymentMethod"]>("ESEWA");
+  const [payingMethod, setPayingMethod] = useState<Payment["paymentMethod"]>("CASH");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -294,9 +294,6 @@ function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
         onChange={(e) => setPayingMethod(e.target.value as Payment["paymentMethod"])}
         className="mt-3 w-full rounded-lg border border-stone-200 px-2.5 py-2 text-xs text-stone-600 outline-none"
       >
-        <option value="ESEWA">eSewa</option>
-        <option value="KHALTI">Khalti</option>
-        <option value="BANK">Bank Transfer</option>
         <option value="CASH">Cash</option>
       </select>
 

@@ -310,7 +310,7 @@ function RequestRow({
 }
 
 function PayDepositPanel({ bookingId, onClose, onPaid }: { bookingId: number; onClose: () => void; onPaid: () => void }) {
-  const [method, setMethod] = useState<"ESEWA" | "KHALTI" | "BANK" | "CASH">("ESEWA");
+  const [method, setMethod] = useState<"ESEWA" | "KHALTI" | "BANK" | "CASH">("CASH");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -342,9 +342,6 @@ function PayDepositPanel({ bookingId, onClose, onPaid }: { bookingId: number; on
           onChange={(e) => setMethod(e.target.value as typeof method)}
           className="rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-600 outline-none"
         >
-          <option value="ESEWA">eSewa</option>
-          <option value="KHALTI">Khalti</option>
-          <option value="BANK">Bank Transfer</option>
           <option value="CASH">Cash</option>
         </select>
         <button

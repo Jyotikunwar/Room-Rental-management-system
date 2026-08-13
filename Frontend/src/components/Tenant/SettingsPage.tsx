@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Bell, User as UserIcon, Lock, CreditCard,
   Trash2, Camera, Check, Plus, ShieldCheck, Upload, AlertTriangle, Loader2,
-  Landmark, Smartphone, Wallet, X,
+  Landmark, Wallet, X,
 } from "lucide-react";
 import type { User, PaymentMethod } from "../../services/api";
 import { api } from "../../services/api";
@@ -29,16 +29,13 @@ interface SettingsPageProps {
 }
 
 const METHOD_ICON: Record<PaymentMethod["type"], typeof Landmark> = {
-  ESEWA: Smartphone,
-  KHALTI: Smartphone,
-  BANK: Landmark,
+  ESEWA: Wallet,
+  KHALTI: Wallet,
+  BANK: Wallet,
   CASH: Wallet,
 };
 
 const METHOD_TYPES: { value: PaymentMethod["type"]; label: string }[] = [
-  { value: "ESEWA", label: "eSewa" },
-  { value: "KHALTI", label: "Khalti" },
-  { value: "BANK", label: "Bank Transfer" },
   { value: "CASH", label: "Cash" },
 ];
 
@@ -119,7 +116,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   const [methodsError, setMethodsError] = useState<string | null>(null);
   const [methodBusyId, setMethodBusyId] = useState<number | null>(null);
   const [addMethodOpen, setAddMethodOpen] = useState(false);
-  const [newMethodType, setNewMethodType] = useState<PaymentMethod["type"]>("ESEWA");
+  const [newMethodType, setNewMethodType] = useState<PaymentMethod["type"]>("CASH");
   const [newMethodLabel, setNewMethodLabel] = useState("");
   const [newMethodDetail, setNewMethodDetail] = useState("");
   const [addingMethod, setAddingMethod] = useState(false);
@@ -163,7 +160,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       setAddMethodOpen(false);
       setNewMethodLabel("");
       setNewMethodDetail("");
-      setNewMethodType("ESEWA");
+      setNewMethodType("CASH");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Couldn't add payment method.");
     } finally {

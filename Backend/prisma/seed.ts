@@ -263,29 +263,19 @@ async function main() {
   const tenant1Esewa = await prisma.paymentMethod.create({
     data: {
       userId: tenant1.id,
-      type: SavedPaymentMethodType.ESEWA,
-      label: "eSewa Primary Wallet",
-      detail: "9811112233",
+      type: SavedPaymentMethodType.CASH,
+      label: "Cash Payment",
+      detail: "Hand delivered to landlord",
       isDefault: true,
-    },
-  });
-
-  await prisma.paymentMethod.create({
-    data: {
-      userId: tenant1.id,
-      type: SavedPaymentMethodType.BANK,
-      label: "Nabil Bank Account",
-      detail: "01000199887711",
-      isDefault: false,
     },
   });
 
   const tenant2Khalti = await prisma.paymentMethod.create({
     data: {
       userId: tenant2.id,
-      type: SavedPaymentMethodType.KHALTI,
-      label: "Khalti Digital Wallet",
-      detail: "9812223344",
+      type: SavedPaymentMethodType.CASH,
+      label: "Cash Payment",
+      detail: "Hand delivered to landlord",
       isDefault: true,
     },
   });
@@ -759,8 +749,8 @@ async function main() {
         isActive: true,
       },
       {
-        question: "What digital payment methods are accepted?",
-        answer: "RoomFinder supports digital payment tracking for eSewa, Khalti, direct bank transfer, and cash payments as agreed with your landlord.",
+        question: "What payment methods are accepted?",
+        answer: "RoomFinder supports cash payments as agreed with your landlord.",
         order: 6,
         isActive: true,
       },
