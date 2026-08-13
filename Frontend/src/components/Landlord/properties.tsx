@@ -442,6 +442,9 @@ function resolveImageUrl(url: string) {
 
 
 export default function LandlordProperties({ user, onLogout, activeRoute, onNavigate }: LandlordPropertiesProps) {
+  const addSectionRef = useRef<HTMLDivElement>(null);
+  const editSectionRef = useRef<HTMLDivElement>(null);
+
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [headerSearch, setHeaderSearch] = useState("");
@@ -500,7 +503,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
   const pagedRooms = filteredRooms.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // ---------- Edit panel ----------
-  function selectRoomToEdit(idStr: string) {
+  function selectRoomToEdit(idStr: string, shouldScroll = true) {
     if (!idStr) {
       setEditingRoomId("");
       setEditForm(EMPTY_FORM);
@@ -523,6 +526,11 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
       furnishedDetails: room.furnishedDetails || "",
       status: room.status,
     });
+    if (shouldScroll) {
+      setTimeout(() => {
+        editSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 50);
+    }
   }
 
   function toggleEditAmenity(name: string) {
@@ -689,7 +697,10 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
             <button className="shrink-0 rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50" aria-label="Notifications">
               <Bell size={18} />
             </button>
-            <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 sm:flex-none">
+            <button
+              onClick={() => addSectionRef.current?.scrollIntoView({ behavior: "smooth" })}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 sm:flex-none"
+            >
               <Plus size={16} />
               <span className="whitespace-nowrap">Add New Property</span>
             </button>
@@ -882,7 +893,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
           </div>
 
           {/* Edit Existing Property */}
-          <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 sm:p-6">
+          <div ref={editSectionRef} className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 sm:p-6">
             <h2 className="mb-5 text-base font-semibold text-gray-900">Edit Existing Property</h2>
 
             <div className="mb-5 w-full sm:max-w-sm">
@@ -1028,7 +1039,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
           </div>
 
           {/* Add New Property */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6">
+          <div ref={addSectionRef} className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6">
             <h2 className="mb-5 text-base font-semibold text-gray-900">Add New Property</h2>
             <form onSubmit={handleSubmit} className="space-y-5">
               {formError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</p>}
