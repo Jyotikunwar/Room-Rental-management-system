@@ -1,8 +1,8 @@
 import prisma from "../lib/prisma";
-import { Role } from "@prisma/client";
+
 
 /** Contacts the current user is allowed to start or continue a conversation with. */
-export async function getAllowedContactIds(userId: number, userRole: Role): Promise<number[]> {
+export async function getAllowedContactIds(userId: number, userRole: string): Promise<number[]> {
   if (userRole === "ADMIN") {
     const users = await prisma.user.findMany({
       where: { role: { in: ["TENANT", "LANDLORD"] } },
@@ -50,7 +50,7 @@ export async function getAllowedContactIds(userId: number, userRole: Role): Prom
   return [];
 }
 
-export async function canMessage(userId: number, userRole: Role, contactId: number): Promise<boolean> {
+export async function canMessage(userId: number, userRole: string, contactId: number): Promise<boolean> {
   const allowed = await getAllowedContactIds(userId, userRole);
   return allowed.includes(contactId);
 }
