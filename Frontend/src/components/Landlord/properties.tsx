@@ -447,7 +447,6 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [headerSearch, setHeaderSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [addressFilter, setAddressFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -484,7 +483,6 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
 
   const filteredRooms = useMemo(() => {
     let list = filterRoomsMultiCriteria(rooms, {
-      query: headerSearch,
       roomType: typeFilter === "ALL" ? undefined : typeFilter,
     });
     if (addressFilter !== "ALL") {
@@ -494,9 +492,9 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
       list = list.filter((r) => r.status === statusFilter);
     }
     return list;
-  }, [rooms, headerSearch, typeFilter, addressFilter, statusFilter]);
+  }, [rooms, typeFilter, addressFilter, statusFilter]);
 
-  useEffect(() => setPage(1), [headerSearch, typeFilter, addressFilter, statusFilter]);
+  useEffect(() => setPage(1), [typeFilter, addressFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRooms.length / PAGE_SIZE));
   const pagedRooms = filteredRooms.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -702,29 +700,22 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
     <div className="flex min-h-screen bg-gray-50">
       <LandlordSidebar active={activeRoute} onNavigate={onNavigate} onLogout={onLogout} user={user} />
       <div className="min-w-0 flex-1">
-        <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-          <div className="relative w-full sm:max-w-xs">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={headerSearch}
-              onChange={(e) => setHeaderSearch(e.target.value)}
-              placeholder="Search properties, tenants..."
-              className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
-            />
-          </div>
-          <div className="flex justify-end gap-3">
-            <button className="shrink-0 rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50" aria-label="Notifications">
-              <Bell size={18} />
-            </button>
-            <button
-              onClick={() => addSectionRef.current?.scrollIntoView({ behavior: "smooth" })}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 sm:flex-none"
-            >
-              <Plus size={16} />
-              <span className="whitespace-nowrap">Add New Property</span>
-            </button>
-          </div>
+        <header className="flex items-center justify-end gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+          <button
+            onClick={() => onNavigate("activity")}
+            className="shrink-0 rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50 transition-colors"
+            aria-label="Notifications"
+            title="Notifications / Activity"
+          >
+            <Bell size={18} />
+          </button>
+          <button
+            onClick={() => addSectionRef.current?.scrollIntoView({ behavior: "smooth" })}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            <Plus size={16} />
+            <span className="whitespace-nowrap">Add New Property</span>
+          </button>
         </header>
 
         <main className="p-4 sm:p-6">
