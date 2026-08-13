@@ -5,8 +5,8 @@ import {
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import type { User } from "../../services/api";
-import { Sidebar, type NavLabel } from "./Sidebar";
-import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
+import { Sidebar, type NavLabel } from "../Tenant/Sidebar";
+import { NAV_LABEL_TO_VIEW, type TenantView } from "../Tenant/navigation";
 
 // ---------- Types ----------
 type NotificationCategory = "PAYMENTS" | "MAINTENANCE" | "LEASE" | "MESSAGES";
@@ -107,6 +107,7 @@ export default function Notifications({ user, onLogout, onNavigate }: Notificati
   return (
     <div className="flex min-h-screen w-full bg-[#F4F6FB] text-stone-900">
       <Sidebar
+        user={user}
         active="Notifications"
         onNavigate={handleNavigate}
         onSettings={() => onNavigate("settings")}

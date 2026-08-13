@@ -22,13 +22,16 @@ import LandlordActivity from "./activity";
 import LandlordReviews from "./reviews";
 import LandlordSettings from "./settings";
 
+import { LocationSelector } from "../Common/LocationSelector";
+
 interface LandlordDashboardProps {
   user: User;
   onLogout?: () => void;
   onAddProperty?: () => void;
+  onUserUpdate?: (user: User) => void;
 }
 
-export default function LandlordDashboard({ user, onLogout, onAddProperty }: LandlordDashboardProps) {
+export default function LandlordDashboard({ user, onLogout, onAddProperty, onUserUpdate }: LandlordDashboardProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
@@ -147,7 +150,7 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
     return <LandlordReviews user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
   }
   if (activeRoute === "settings") {
-    return <LandlordSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} />;
+    return <LandlordSettings user={user} onLogout={onLogout} activeRoute={activeRoute} onNavigate={setActiveRoute} onUserUpdate={onUserUpdate} />;
   }
 
   return (
@@ -155,15 +158,18 @@ export default function LandlordDashboard({ user, onLogout, onAddProperty }: Lan
       <LandlordSidebar active={activeRoute} onNavigate={setActiveRoute} onLogout={onLogout} user={user} />
       <div className="flex-1">
         <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search properties, tenants..."
-              className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
-            />
+          <div className="flex flex-1 items-center gap-3">
+            <div className="relative w-full sm:max-w-xs">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search properties, tenants..."
+                className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
+              />
+            </div>
+            <LocationSelector />
           </div>
 
           <div className="flex gap-3">

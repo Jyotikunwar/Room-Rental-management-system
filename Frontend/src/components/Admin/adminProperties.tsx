@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Search, Bell, LayoutGrid, List, MapPin, Pencil, Eye, Trash2,
-  Loader2, X, Building2,
+  Search, Bell, LayoutGrid, List, MapPin, Trash2,
+  Loader2, X, Building2, CheckCircle, XCircle, Clock, Check, RefreshCw, Pencil, MessageSquare
 } from "lucide-react";
-import { api, UPLOAD_BASE_URL, type User, type Room } from "../../services/api";
+import { api, getImageUrl, type User, type Room } from "../../services/api";
 import AdminSidebar, { type AdminRoute } from "./adminSidebar";
+import { filterRoomsMultiCriteria } from "../../utils/multiCriteriaFilter";
+import { openAdminMessage } from "./adminMessages";
 
 interface AdminPropertiesProps {
   user: User;
@@ -13,234 +15,577 @@ interface AdminPropertiesProps {
   onNavigate: (route: AdminRoute) => void;
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  AVAILABLE: "bg-green-100 text-green-700",
-  BOOKED: "bg-blue-100 text-blue-700",
-  UNDER_MAINTENANCE: "bg-amber-100 text-amber-700",
+interface PropertyStats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+const APPROVAL_BADGE: Record<string, { label: string; style: string; icon: typeof Clock }> = {
+  PENDING: { label: "Pending", style: "bg-amber-100 text-amber-800 border-amber-200", icon: Clock },
+  APPROVED: { label: "Approved", style: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: CheckCircle },
+  REJECTED: { label: "Rejected", style: "bg-rose-100 text-rose-800 border-rose-200", icon: XCircle },
+};
+
+const OCCUPANCY_STYLE: Record<string, string> = {
+  AVAILABLE: "bg-blue-50 text-blue-700 border-blue-100",
+  BOOKED: "bg-purple-50 text-purple-700 border-purple-100",
+  UNDER_MAINTENANCE: "bg-amber-50 text-amber-700 border-amber-100",
 };
 
 function roomThumb(room: Room) {
   const url = room.roomImages?.[0]?.imageUrl;
-  return url ? `${UPLOAD_BASE_URL}${url}` : null;
+  return url ? getImageUrl(url) : null;
 }
 
-export default function AdminProperties({ onLogout, activeRoute, onNavigate }: Omit<AdminPropertiesProps, 'user'>) {
+export default function AdminProperties({ onLogout, activeRoute, onNavigate }: AdminPropertiesProps) {
   const [rooms, setRooms] = useState<Room[] | undefined>(undefined);
+  const [stats, setStats] = useState<PropertyStats>({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
   const [view, setView] = useState<"grid" | "list">("list");
+  const [approvalTab, setApprovalTab] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL");
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [roomType, setRoomType] = useState("");
-  const [status, setStatus] = useState("");
+  const [occupancyStatus, setOccupancyStatus] = useState("");
 
-  const [viewItem, setViewItem] = useState<Room | null>(null);
-  const [editItem, setEditItem] = useState<Room | null>(null);
+  const [editingItem, setEditingItem] = useState<Room | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  const loadRooms = () => {
+  const loadData = async () => {
+    setLoading(true);
     setError(null);
-    api
-      .getRooms({ status: "ALL" })
-      .then((res) => {
-        if (res.success === false) throw new Error(res.message || "Couldn't load properties.");
-        setRooms(res.rooms || []);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "Couldn't load properties."));
+    try {
+      const [roomsRes, statsRes] = await Promise.all([
+        api.getAdminProperties({ approvalStatus: approvalTab }),
+        api.getAdminPropertyStats(),
+      ]);
+
+      if (roomsRes?.success) {
+        setRooms(roomsRes.rooms || []);
+      } else {
+        const fallbackRes = await api.getRooms({ status: "ALL" });
+        setRooms(Array.isArray(fallbackRes) ? fallbackRes : fallbackRes.rooms || []);
+      }
+
+      if (statsRes?.success && statsRes.stats) {
+        setStats(statsRes.stats);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to load properties.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadRooms();
-  }, []);
+    loadData();
+  }, [approvalTab]);
+
+  const showFeedback = (text: string, type: "success" | "error" = "success") => {
+    setFeedbackMsg({ text, type });
+    setTimeout(() => setFeedbackMsg(null), 4000);
+  };
 
   const cities = useMemo(() => Array.from(new Set((rooms ?? []).map((r) => r.city))).sort(), [rooms]);
 
   const filtered = useMemo(() => {
     if (!rooms) return [];
-    const q = search.trim().toLowerCase();
-    return rooms.filter((r) => {
-      const matchesSearch = q === "" || r.title.toLowerCase().includes(q) || r.location.toLowerCase().includes(q);
-      const matchesCity = !city || r.city === city;
-      const matchesType = !roomType || r.roomType === roomType;
-      const matchesStatus = !status || r.status === status;
-      return matchesSearch && matchesCity && matchesType && matchesStatus;
+    let list = filterRoomsMultiCriteria(rooms, {
+      query: search,
+      city: city || undefined,
+      roomType: roomType || undefined,
     });
-  }, [rooms, search, city, roomType, status]);
+
+    if (occupancyStatus) {
+      list = list.filter((r) => r.status === occupancyStatus);
+    }
+
+    return list;
+  }, [rooms, search, city, roomType, occupancyStatus]);
+
+  async function handleApproval(id: number, approvalStatus: "APPROVED" | "REJECTED") {
+    try {
+      const res = await api.updatePropertyApproval(id, approvalStatus);
+      if (!res.success) throw new Error(res.message || "Failed to update property status.");
+      
+      showFeedback(`Property marked as ${approvalStatus.toLowerCase()} successfully!`);
+
+      setRooms((prev) =>
+        prev
+          ? prev.map((r) => (r.id === id ? { ...r, approvalStatus } : r))
+          : prev
+      );
+
+      const statsRes = await api.getAdminPropertyStats();
+      if (statsRes?.success && statsRes.stats) {
+        setStats(statsRes.stats);
+      }
+    } catch (e: any) {
+      showFeedback(e.message || "Failed to update status", "error");
+    }
+  }
+
+  async function handleSavePropertyDetails(id: number, updatedFields: any) {
+    try {
+      const res = await api.updateRoom(id, updatedFields);
+      if (!res.success) throw new Error(res.message || "Failed to update property details.");
+
+      showFeedback("Property updated successfully!");
+      setRooms((prev) =>
+        prev ? prev.map((r) => (r.id === id ? { ...r, ...res.room } : r)) : prev
+      );
+    } catch (e: any) {
+      showFeedback(e.message || "Failed to update property details", "error");
+    }
+  }
 
   async function handleDelete(id: number) {
-    if (!confirm("Delete this property? This cannot be undone.")) return;
+    if (!confirm("Are you sure you want to delete this property? This action cannot be undone.")) return;
     setDeletingId(id);
     try {
       const res = await api.deleteRoom(id);
       if (res.success === false) throw new Error(res.message || "Couldn't delete this property.");
+      
+      showFeedback("Property deleted successfully.");
       setRooms((prev) => (prev ? prev.filter((r) => r.id !== id) : prev));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't delete this property.");
+      
+      const statsRes = await api.getAdminPropertyStats();
+      if (statsRes?.success && statsRes.stats) {
+        setStats(statsRes.stats);
+      }
+    } catch (e: any) {
+      showFeedback(e.message || "Couldn't delete this property.", "error");
     } finally {
       setDeletingId(null);
     }
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-slate-50 font-sans">
       <AdminSidebar active={activeRoute} onNavigate={onNavigate} onLogout={onLogout} />
 
       <div className="flex-1">
-        <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex flex-col gap-3 border-b border-slate-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between shadow-sm">
           <div className="relative w-full sm:max-w-xs">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search properties, tenants..."
-              className="h-10 w-full rounded-full border border-gray-200 bg-gray-50 pl-9 pr-4 text-sm outline-none focus:border-gray-900"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search properties or landlords..."
+              className="h-10 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-4 text-sm outline-none focus:border-slate-900 focus:bg-white transition-all"
             />
           </div>
-          <button className="relative self-end rounded-lg border border-gray-200 bg-white p-2.5 text-gray-600 hover:bg-gray-50 sm:self-auto" aria-label="Notifications">
-            <Bell size={18} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={loadData}
+              title="Refresh properties"
+              className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <RefreshCw size={16} className={loading ? "animate-spin text-slate-400" : ""} />
+            </button>
+            <button className="relative rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 hover:bg-slate-50" aria-label="Notifications">
+              <Bell size={18} />
+            </button>
+          </div>
         </header>
 
-        <main className="p-6">
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <main className="p-6 max-w-7xl mx-auto">
+          {/* Header & Title */}
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Properties</h1>
-              <p className="mt-1 text-sm text-gray-500">{filtered.length} of {rooms?.length ?? 0} listings</p>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Manage Properties</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Manage, edit, accept, or reject property listings across the platform.
+              </p>
             </div>
+          </div>
+
+          {/* Feedback Toast */}
+          {feedbackMsg && (
+            <div className={`mb-6 flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-medium shadow-sm transition-all ${
+              feedbackMsg.type === "success" 
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                : "bg-rose-50 border-rose-200 text-rose-800"
+            }`}>
+              <div className="flex items-center gap-2">
+                {feedbackMsg.type === "success" ? <CheckCircle size={18} /> : <XCircle size={18} />}
+                <span>{feedbackMsg.text}</span>
+              </div>
+              <button onClick={() => setFeedbackMsg(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          {/* Summary Stat Cards */}
+          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <button
-              onClick={() => onNavigate("add-property" as AdminRoute)}
-              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              onClick={() => setApprovalTab("ALL")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                approvalTab === "ALL" 
+                  ? "border-slate-900 bg-slate-900 text-white shadow-md" 
+                  : "border-slate-200 bg-white text-slate-900 hover:border-slate-300"
+              }`}
             >
-              + Add Property
+              <p className={`text-xs font-semibold uppercase tracking-wider ${approvalTab === "ALL" ? "text-slate-300" : "text-slate-400"}`}>
+                Total Listed
+              </p>
+              <p className="mt-2 text-2xl font-bold">{stats.total}</p>
+            </button>
+
+            <button
+              onClick={() => setApprovalTab("PENDING")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                approvalTab === "PENDING"
+                  ? "border-amber-500 bg-amber-500 text-white shadow-md"
+                  : "border-amber-200 bg-amber-50/50 text-amber-900 hover:bg-amber-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <p className={`text-xs font-semibold uppercase tracking-wider ${approvalTab === "PENDING" ? "text-amber-100" : "text-amber-700"}`}>
+                  Pending
+                </p>
+                <Clock size={16} className={approvalTab === "PENDING" ? "text-amber-100" : "text-amber-500"} />
+              </div>
+              <p className="mt-2 text-2xl font-bold">{stats.pending}</p>
+            </button>
+
+            <button
+              onClick={() => setApprovalTab("APPROVED")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                approvalTab === "APPROVED"
+                  ? "border-emerald-600 bg-emerald-600 text-white shadow-md"
+                  : "border-emerald-200 bg-emerald-50/50 text-emerald-900 hover:bg-emerald-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <p className={`text-xs font-semibold uppercase tracking-wider ${approvalTab === "APPROVED" ? "text-emerald-100" : "text-emerald-700"}`}>
+                  Approved
+                </p>
+                <CheckCircle size={16} className={approvalTab === "APPROVED" ? "text-emerald-100" : "text-emerald-500"} />
+              </div>
+              <p className="mt-2 text-2xl font-bold">{stats.approved}</p>
+            </button>
+
+            <button
+              onClick={() => setApprovalTab("REJECTED")}
+              className={`rounded-2xl border p-4 text-left transition-all ${
+                approvalTab === "REJECTED"
+                  ? "border-rose-600 bg-rose-600 text-white shadow-md"
+                  : "border-rose-200 bg-rose-50/50 text-rose-900 hover:bg-rose-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <p className={`text-xs font-semibold uppercase tracking-wider ${approvalTab === "REJECTED" ? "text-rose-100" : "text-rose-700"}`}>
+                  Rejected
+                </p>
+                <XCircle size={16} className={approvalTab === "REJECTED" ? "text-rose-100" : "text-rose-500"} />
+              </div>
+              <p className="mt-2 text-2xl font-bold">{stats.rejected}</p>
             </button>
           </div>
 
-          {/* Search + Filters */}
-          <div className="mb-5 rounded-2xl border border-gray-200 bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by title or location..."
-                  className="h-10 w-full rounded-lg border border-gray-200 pl-9 pr-3 text-sm outline-none focus:border-gray-900"
-                />
-              </div>
-              <select value={city} onChange={(e) => setCity(e.target.value)} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 outline-none">
+          {/* Status Tabs Bar */}
+          <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-1 rounded-xl bg-slate-100 p-1">
+              {(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map((tab) => {
+                const isActive = approvalTab === tab;
+                let count = stats.total;
+                if (tab === "PENDING") count = stats.pending;
+                if (tab === "APPROVED") count = stats.approved;
+                if (tab === "REJECTED") count = stats.rejected;
+
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setApprovalTab(tab)}
+                    className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                      isActive
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                    }`}
+                  >
+                    <span>{tab === "ALL" ? "All Properties" : tab}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] ${
+                      isActive ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-600"
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Filter Inputs & View Switcher */}
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 outline-none focus:border-slate-900"
+              >
                 <option value="">All Cities</option>
                 {cities.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
-              <select value={roomType} onChange={(e) => setRoomType(e.target.value)} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 outline-none">
+
+              <select
+                value={roomType}
+                onChange={(e) => setRoomType(e.target.value)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 outline-none focus:border-slate-900"
+              >
                 <option value="">All Types</option>
                 <option value="SINGLE">Single Room</option>
                 <option value="DOUBLE">Double Room</option>
                 <option value="FLAT">Flat</option>
                 <option value="APARTMENT">Apartment</option>
               </select>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 outline-none">
-                <option value="">All Status</option>
+
+              <select
+                value={occupancyStatus}
+                onChange={(e) => setOccupancyStatus(e.target.value)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 outline-none focus:border-slate-900"
+              >
+                <option value="">Status</option>
                 <option value="AVAILABLE">Available</option>
                 <option value="BOOKED">Booked</option>
-                <option value="UNDER_MAINTENANCE">Under Maintenance</option>
+                <option value="UNDER_MAINTENANCE">Maintenance</option>
               </select>
 
-              <div className="flex overflow-hidden rounded-lg border border-gray-200">
-                <button onClick={() => setView("list")} className={`flex items-center gap-1.5 px-3 py-2 text-sm ${view === "list" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
-                  <List size={16} />
+              <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  onClick={() => setView("list")}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    view === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <List size={14} />
+                  <span>List</span>
                 </button>
-                <button onClick={() => setView("grid")} className={`flex items-center gap-1.5 px-3 py-2 text-sm ${view === "grid" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
-                  <LayoutGrid size={16} />
+                <button
+                  onClick={() => setView("grid")}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    view === "grid" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <LayoutGrid size={14} />
+                  <span>Grid</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Content */}
-          {rooms === undefined ? (
-            <div className="flex items-center justify-center py-16"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+          {/* Properties Table / Grid */}
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-slate-200">
+              <Loader2 size={24} className="animate-spin text-slate-400" />
+              <p className="mt-3 text-sm text-slate-500">Loading properties...</p>
+            </div>
           ) : error ? (
-            <div className="rounded-2xl border border-dashed border-red-200 bg-red-50 p-8 text-center text-sm text-red-600">{error}</div>
+            <div className="rounded-2xl border border-dashed border-rose-200 bg-rose-50/50 p-10 text-center text-sm text-rose-600">
+              {error}
+            </div>
           ) : filtered.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-400">No properties match these filters.</div>
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
+              <Building2 size={36} className="mx-auto text-slate-300 mb-3" />
+              <p className="font-semibold text-slate-800">No properties found</p>
+              <p className="mt-1 text-slate-400">
+                {approvalTab !== "ALL"
+                  ? `There are currently no ${approvalTab.toLowerCase()} properties matching your criteria.`
+                  : "No properties match your active filters."}
+              </p>
+            </div>
           ) : view === "list" ? (
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-5 py-3 font-medium">Property</th>
-                    <th className="px-5 py-3 font-medium">Type</th>
-                    <th className="px-5 py-3 font-medium">Rent</th>
-                    <th className="px-5 py-3 font-medium">Status</th>
-                    <th className="px-5 py-3 text-right font-medium">Actions</th>
+                    <th className="px-5 py-3.5 font-semibold">Property</th>
+                    <th className="px-5 py-3.5 font-semibold">Landlord</th>
+                    <th className="px-5 py-3.5 font-semibold">Type &amp; Rent</th>
+                    <th className="px-5 py-3.5 font-semibold">Status</th>
+                    <th className="px-5 py-3.5 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filtered.map((room) => (
-                    <tr key={room.id} className="border-t border-gray-100 hover:bg-gray-50">
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-3">
-                          <RoomAvatar room={room} />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-gray-900">{room.title}</p>
-                            <p className="flex items-center gap-1 truncate text-xs text-gray-400"><MapPin size={11} />{room.location}, {room.city}</p>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((room) => {
+                    return (
+                      <tr key={room.id} className="hover:bg-slate-50/80 transition-colors">
+                        {/* Title & Location */}
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <RoomAvatar room={room} />
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-slate-900">{room.title}</p>
+                              <p className="flex items-center gap-1 truncate text-xs text-slate-400 mt-0.5">
+                                <MapPin size={12} />
+                                {room.location}, {room.city}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-gray-600">{room.roomType}</td>
-                      <td className="px-5 py-3 text-gray-600">Rs. {room.price.toLocaleString()}</td>
-                      <td className="px-5 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[room.status]}`}>{room.status.replace("_", " ")}</span>
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => setViewItem(room)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><Eye size={16} /></button>
-                          <button onClick={() => setEditItem(room)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><Pencil size={16} /></button>
-                          <button onClick={() => handleDelete(room.id)} disabled={deletingId === room.id} className="rounded-lg p-2 text-red-500 hover:bg-red-50 disabled:opacity-50"><Trash2 size={16} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+
+                        {/* Landlord */}
+                        <td className="px-5 py-4 text-slate-700">
+                          <button
+                            onClick={() => {
+                              openAdminMessage(room.landlordId);
+                              onNavigate("messages");
+                            }}
+                            className="text-left group"
+                            title="Chat with Landlord"
+                          >
+                            <p className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
+                              <span>{room.landlord?.fullName || `Landlord #${room.landlordId}`}</span>
+                              <MessageSquare size={12} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </p>
+                            <p className="text-xs text-slate-400">{room.landlord?.phone || room.landlord?.email || "Click to message"}</p>
+                          </button>
+                        </td>
+
+                        {/* Type & Rent */}
+                        <td className="px-5 py-4 text-slate-700">
+                          <p className="font-medium text-slate-900">Rs. {room.price.toLocaleString()}/mo</p>
+                          <p className="text-xs text-slate-400">{room.roomType}</p>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex rounded-md border px-2.5 py-0.5 text-xs font-medium ${OCCUPANCY_STYLE[room.status]}`}>
+                            {room.status.replace("_", " ")}
+                          </span>
+                        </td>
+
+                        {/* Action Buttons */}
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Message Landlord Button */}
+                            <button
+                              onClick={() => {
+                                openAdminMessage(room.landlordId);
+                                onNavigate("messages");
+                              }}
+                              className="flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors"
+                              title="Chat with Landlord"
+                            >
+                              <MessageSquare size={13} />
+                              <span>Message</span>
+                            </button>
+
+                            {/* Edit / Review Button */}
+                            <button
+                              onClick={() => setEditingItem(room)}
+                              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-colors"
+                            >
+                              <Pencil size={13} className="text-slate-500" />
+                              <span>Edit</span>
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              onClick={() => handleDelete(room.id)}
+                              disabled={deletingId === room.id}
+                              title="Delete Property"
+                              className="rounded-lg border border-rose-100 p-1.5 text-rose-500 hover:bg-rose-50 disabled:opacity-50 transition-colors"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
+            /* Grid View */
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((room) => (
-                <div key={room.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-                  <div className="h-36 bg-gray-100">
-                    {roomThumb(room) ? (
-                      <img src={roomThumb(room)!} alt={room.title} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-gray-300"><Building2 size={28} /></div>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <div className="mb-1 flex items-start justify-between gap-2">
-                      <h3 className="truncate text-sm font-semibold text-gray-900">{room.title}</h3>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[room.status]}`}>{room.status.replace("_", " ")}</span>
+              {filtered.map((room) => {
+                return (
+                  <div key={room.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                    <div className="relative h-44 bg-slate-100">
+                      {roomThumb(room) ? (
+                        <img src={roomThumb(room)!} alt={room.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-slate-300">
+                          <Building2 size={36} />
+                        </div>
+                      )}
                     </div>
-                    <p className="flex items-center gap-1 text-xs text-gray-400"><MapPin size={11} />{room.location}, {room.city}</p>
-                    <p className="mt-2 text-sm font-semibold text-gray-800">Rs. {room.price.toLocaleString()}/mo</p>
-                    <div className="mt-3 flex gap-2">
-                      <button onClick={() => setViewItem(room)} className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-gray-200 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"><Eye size={13} /> View</button>
-                      <button onClick={() => setEditItem(room)} className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-gray-200 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"><Pencil size={13} /> Edit</button>
-                      <button onClick={() => handleDelete(room.id)} disabled={deletingId === room.id} className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-red-500 hover:bg-red-50 disabled:opacity-50"><Trash2 size={13} /></button>
+
+                    <div className="p-4 flex-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="truncate text-base font-bold text-slate-900">{room.title}</h3>
+                        <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                          <MapPin size={12} />
+                          {room.location}, {room.city}
+                        </p>
+                        
+                        <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                          <div>
+                            <p className="text-xs text-slate-400">Monthly Rent</p>
+                            <p className="text-base font-bold text-slate-900">Rs. {room.price.toLocaleString()}</p>
+                          </div>
+                          <span className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${OCCUPANCY_STYLE[room.status]}`}>
+                            {room.status.replace("_", " ")}
+                          </span>
+                        </div>
+
+                        {room.landlord && (
+                          <div className="mt-2 text-xs text-slate-500">
+                            Landlord: <span className="font-semibold text-slate-700">{room.landlord.fullName}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => setEditingItem(room)}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm"
+                        >
+                          <Pencil size={13} className="text-slate-500" />
+                          <span>Edit &amp; Review</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(room.id)}
+                          disabled={deletingId === room.id}
+                          className="rounded-lg border border-rose-100 p-1.5 text-rose-500 hover:bg-rose-50 disabled:opacity-50 transition-colors"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>
       </div>
 
-      {viewItem && <ViewPropertyModal room={viewItem} onClose={() => setViewItem(null)} />}
-      {editItem && (
+      {editingItem && (
         <EditPropertyModal
-          room={editItem}
-          onClose={() => setEditItem(null)}
-          onSaved={(updated) => {
-            setRooms((prev) => prev?.map((r) => (r.id === updated.id ? updated : r)));
-            setEditItem(null);
+          room={editingItem}
+          onClose={() => setEditingItem(null)}
+          onApprove={() => {
+            handleApproval(editingItem.id, "APPROVED");
+            setEditingItem(null);
+          }}
+          onReject={() => {
+            handleApproval(editingItem.id, "REJECTED");
+            setEditingItem(null);
+          }}
+          onSave={async (updatedFields) => {
+            await handleSavePropertyDetails(editingItem.id, updatedFields);
+            setEditingItem(null);
           }}
         />
       )}
@@ -250,125 +595,269 @@ export default function AdminProperties({ onLogout, activeRoute, onNavigate }: O
 
 function RoomAvatar({ room }: { room: Room }) {
   const thumb = roomThumb(room);
-  if (thumb) return <img src={thumb} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />;
+  if (thumb) return <img src={thumb} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover shadow-sm" />;
   return (
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-400">
-      <Building2 size={18} />
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+      <Building2 size={20} />
     </div>
   );
 }
 
-function ViewPropertyModal({ room, onClose }: { room: Room; onClose: () => void }) {
+function EditPropertyModal({
+  room,
+  onClose,
+  onApprove,
+  onReject,
+  onSave,
+}: {
+  room: Room;
+  onClose: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onSave: (updatedFields: any) => Promise<void>;
+}) {
   const thumb = roomThumb(room);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-gray-100 p-5">
-          <h2 className="text-lg font-bold text-gray-900">Property Details</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-        </div>
-        <div className="max-h-[70vh] overflow-y-auto p-5">
-          <div className="mb-4 h-40 overflow-hidden rounded-xl bg-gray-100">
-            {thumb ? <img src={thumb} alt={room.title} className="h-full w-full object-cover" /> : (
-              <div className="flex h-full items-center justify-center text-gray-300"><Building2 size={32} /></div>
-            )}
-          </div>
-          <h3 className="text-base font-semibold text-gray-900">{room.title}</h3>
-          <p className="flex items-center gap-1 text-sm text-gray-500"><MapPin size={13} />{room.location}, {room.city}</p>
-          {room.description && <p className="mt-3 text-sm text-gray-600">{room.description}</p>}
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <div><p className="text-xs text-gray-400">Type</p><p className="font-medium text-gray-800">{room.roomType}</p></div>
-            <div><p className="text-xs text-gray-400">Status</p><p className="font-medium text-gray-800">{room.status.replace("_", " ")}</p></div>
-            <div><p className="text-xs text-gray-400">Rent</p><p className="font-medium text-gray-800">Rs. {room.price.toLocaleString()}/mo</p></div>
-            <div>
-              <p className="text-xs text-gray-400">Deposit</p>
-              <p className="font-medium text-gray-800">
-                {(() => {
-                  const dep = (room as any).securityDeposit;
-                  return dep ? `Rs. ${Number(dep).toLocaleString()}` : "—";
-                })()}
-              </p>
-            </div>
-          </div>
-          {room.landlord && (
-            <div className="mt-4 border-t border-gray-100 pt-4 text-sm">
-              <p className="text-xs text-gray-400">Landlord</p>
-              <p className="font-medium text-gray-800">{room.landlord.fullName}</p>
-              {room.landlord.phone && <p className="text-gray-500">{room.landlord.phone}</p>}
-            </div>
-          )}
-        </div>
-        <div className="flex justify-end border-t border-gray-100 p-5">
-          <button onClick={onClose} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
+  const approval = APPROVAL_BADGE[room.approvalStatus || "APPROVED"] || APPROVAL_BADGE.APPROVED;
+  const BadgeIcon = approval.icon;
 
-function EditPropertyModal({ room, onClose, onSaved }: { room: Room; onClose: () => void; onSaved: (room: Room) => void }) {
-  const [title, setTitle] = useState(room.title);
-  const [price, setPrice] = useState(String(room.price));
-  const [status, setStatus] = useState(room.status);
-  const [description, setDescription] = useState(room.description ?? "");
+  const [title, setTitle] = useState(room.title || "");
+  const [roomType, setRoomType] = useState<Room["roomType"]>(room.roomType || "SINGLE");
+  const [price, setPrice] = useState(room.price ? room.price.toString() : "");
+  const [city, setCity] = useState(room.city || "");
+  const [location, setLocation] = useState(room.location || "");
+  const [description, setDescription] = useState(room.description || "");
+  const [furnishedDetails, setFurnishedDetails] = useState(room.furnishedDetails || "");
+  const [status, setStatus] = useState<Room["status"]>(room.status || "AVAILABLE");
+  
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function handleSave() {
+  async function handleFormSave(e: React.FormEvent) {
+    e.preventDefault();
     setSaving(true);
-    setError(null);
     try {
-      const res = await api.updateRoom(room.id, {
+      await onSave({
         title: title.trim(),
-        price: Number(price) || room.price,
+        roomType,
+        price: Number(price) || 0,
+        city: city.trim(),
+        location: location.trim(),
+        description: description.trim() || undefined,
+        furnishedDetails: furnishedDetails.trim() || undefined,
         status,
-        description: description.trim(),
       });
-      if (res.success === false) throw new Error(res.message || "Couldn't save changes.");
-      onSaved(res.room);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save changes.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-bold text-gray-900">Edit Property</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 p-5 bg-slate-50/50 shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-900">Edit Property Details</h2>
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${approval.style}`}>
+              <BadgeIcon size={12} />
+              {approval.label}
+            </span>
+          </div>
+          <button onClick={onClose} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+            <X size={20} />
+          </button>
         </div>
 
-        {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600">{error}</div>}
+        {/* Content & Form */}
+        <form id="edit-property-form" onSubmit={handleFormSave} className="overflow-y-auto p-6 space-y-5 flex-1">
+          <div className="h-44 overflow-hidden rounded-xl bg-slate-100 relative shrink-0">
+            {thumb ? (
+              <img src={thumb} alt={room.title} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-slate-300">
+                <Building2 size={40} />
+              </div>
+            )}
+          </div>
 
-        <label className="mb-3 block text-xs font-medium text-gray-600">
-          Title
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900" />
-        </label>
-        <label className="mb-3 block text-xs font-medium text-gray-600">
-          Monthly Rent (Rs.)
-          <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-gray-900" />
-        </label>
-        <label className="mb-3 block text-xs font-medium text-gray-600">
-          Status
-          <select value={status} onChange={(e) => setStatus(e.target.value as Room["status"])} className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-gray-900">
-            <option value="AVAILABLE">Available</option>
-            <option value="BOOKED">Booked</option>
-            <option value="UNDER_MAINTENANCE">Under Maintenance</option>
-          </select>
-        </label>
-        <label className="mb-4 block text-xs font-medium text-gray-600">
-          Description
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900" />
-        </label>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Property Title
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900"
+              />
+            </div>
 
-        <div className="flex justify-end gap-3">
-          <button onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60">
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Room Type
+                </label>
+                <select
+                  value={roomType}
+                  onChange={(e) => setRoomType(e.target.value as Room["roomType"])}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900"
+                >
+                  <option value="SINGLE">Single Room</option>
+                  <option value="DOUBLE">Double Room</option>
+                  <option value="FLAT">Flat</option>
+                  <option value="APARTMENT">Apartment</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Monthly Rent (Rs.)
+                </label>
+                <input
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  required
+                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  City
+                </label>
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  required
+                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Location / Area
+                </label>
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  required
+                  className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as Room["status"])}
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900"
+              >
+                <option value="AVAILABLE">Available</option>
+                <option value="BOOKED">Booked</option>
+                <option value="UNDER_MAINTENANCE">Under Maintenance</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Description
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 p-3 text-sm outline-none focus:border-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Included Furnitures &amp; Furnishings
+              </label>
+              <input
+                type="text"
+                value={furnishedDetails}
+                onChange={(e) => setFurnishedDetails(e.target.value)}
+                placeholder="e.g. Double Bed, Wardrobe, Study Table, Sofa, Dining Set"
+                className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900"
+              />
+            </div>
+
+            {room.landlord && (
+              <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Landlord Details</p>
+                <div className="flex items-center justify-between text-sm">
+                  <div>
+                    <p className="font-semibold text-slate-900">{room.landlord.fullName}</p>
+                    <p className="text-xs text-slate-500">{room.landlord.email}</p>
+                  </div>
+                  {room.landlord.phone && (
+                    <p className="font-semibold text-slate-800 bg-white px-3 py-1 rounded-lg border border-slate-200">
+                      {room.landlord.phone}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </form>
+
+        {/* Footer Actions: Accept, Reject, Save */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5 bg-slate-50/50 shrink-0">
+          <div className="flex items-center gap-2">
+            {/* Accept (Approve) Button */}
+            {room.approvalStatus !== "APPROVED" && (
+              <button
+                type="button"
+                onClick={onApprove}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors shadow-sm"
+              >
+                <Check size={16} />
+                Accept Property
+              </button>
+            )}
+
+            {/* Reject Button */}
+            {room.approvalStatus !== "REJECTED" && (
+              <button
+                type="button"
+                onClick={onReject}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+              >
+                <X size={16} />
+                Reject Property
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              Cancel
+            </button>
+            
+            <button
+              type="submit"
+              form="edit-property-form"
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              Save Changes
+            </button>
+          </div>
         </div>
       </div>
     </div>

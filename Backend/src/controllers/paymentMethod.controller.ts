@@ -26,8 +26,8 @@ export const addPaymentMethod = async (req: AuthRequest, res: Response) => {
     if (!type || !label) {
       return res.status(400).json({ success: false, message: "type and label are required" });
     }
-    if (!["ESEWA", "KHALTI", "BANK", "CASH"].includes(type)) {
-      return res.status(400).json({ success: false, message: "Invalid payment method type" });
+    if (!["CASH"].includes(type)) {
+      return res.status(400).json({ success: false, message: "Invalid payment method type. Only CASH is accepted." });
     }
 
     const method = await prisma.$transaction(async (tx) => {

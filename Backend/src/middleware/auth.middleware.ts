@@ -47,3 +47,27 @@ export const authorize = (...allowedRoles: string[]) => {
     next();
   };
 };
+
+/** Attaches user when a valid Bearer token is present; otherwise continues anonymously. */
+export const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = verifyToken(token);
+    req.user = decoded;
+
+    prisma.user
+      .update({ where: { id: decoded.id }, data: { lastActiveAt: new Date() } })
+      .catch(() => {});
+
+    next();
+  } catch {
+    next();
+  }
+};

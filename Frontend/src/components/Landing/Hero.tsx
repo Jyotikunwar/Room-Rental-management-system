@@ -1,15 +1,17 @@
 import { CheckCircle2 } from "lucide-react";
 import LandingSearchBar from "./LandingSearchBar";
+import type { Room } from "../../services/api";
 
 interface HeroProps {
   onSearch: () => void;
   onFindRoomClick: () => void;
   onListPropertyClick: () => void;
+  onSelectRoom?: (room: Room) => void;
 }
 
 const CHECKLIST = ["Verified Landlords", "No Hidden Charges", "Instant Booking Support"];
 
-export default function Hero({ onSearch, onFindRoomClick, onListPropertyClick }: HeroProps) {
+export default function Hero({ onSearch, onFindRoomClick, onListPropertyClick, onSelectRoom }: HeroProps) {
   return (
     <section id="home" className="bg-gradient-to-b from-blue-50/60 to-white py-14">
       <div className="mx-auto max-w-7xl px-6">
@@ -82,7 +84,7 @@ export default function Hero({ onSearch, onFindRoomClick, onListPropertyClick }:
 
         {/* Search bar */}
         <div className="mt-10">
-          <LandingSearchBar onSearch={onSearch} />
+          <LandingSearchBar onSearch={onSearch} onSelectRoom={onSelectRoom} onBrowseRooms={onFindRoomClick} />
         </div>
       </div>
     </section>

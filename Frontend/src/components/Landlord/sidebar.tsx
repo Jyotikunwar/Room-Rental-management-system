@@ -53,14 +53,9 @@ interface LandlordSidebarProps {
   user?: User;
 }
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((n) => n[0]?.toUpperCase())
-    .join("");
-}
+
+
+import Avatar from "../Avatar";
 
 export default function LandlordSidebar({ active, onNavigate, onLogout, user }: LandlordSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -77,9 +72,7 @@ export default function LandlordSidebar({ active, onNavigate, onLogout, user }: 
     <div className="flex h-full flex-col bg-[#0f172a] text-slate-300">
       {/* User header */}
       <div className="flex items-center gap-3 px-5 py-6">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold text-[#0f172a]">
-          {initials(displayName)}
-        </div>
+        <Avatar name={displayName} avatarUrl={user?.avatarUrl} size={40} />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-white">{displayName}</p>
           {displayEmail && <p className="truncate text-[11px] text-slate-400">{displayEmail}</p>}

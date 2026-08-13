@@ -1,7 +1,8 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { getSimilarRoomRecommendations } from "../services/recommendation.service";
+import { getSimilarRoomRecommendations, getSavedRoomsContentBasedRecommendations, getPopularRoomRecommendations, resolveDashboardRecommendations } from "../services/recommendation.service";
+import { calculateHaversineDistance } from "../utils/haversine";
 
 export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
   try {
@@ -88,30 +89,8 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    let recommendations: any[] = [];
-    const favoriteRoomId = recentFavorites[0]?.roomId;
-    if (favoriteRoomId) {
-      recommendations = await getSimilarRoomRecommendations(favoriteRoomId, 6);
-    } else {
-      const topRooms = await prisma.room.findMany({
-        where: { status: "AVAILABLE", city: "Kathmandu" },
-        include: {
-          roomImages: true,
-          roomAmenities: { include: { amenity: true } },
-          reviews: true,
-          favorites: true,
-          landlord: { select: { id: true, fullName: true, phone: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 6,
-      });
-      recommendations = topRooms.map((room) => ({
-        room,
-        similarityScore: 0,
-        popularityScore: 0,
-        finalScore: 0,
-      }));
-    }
+    const { recommendations, source: recommendationSource } =
+      await resolveDashboardRecommendations(tenantId, 6);
 
     const preferredLocation = recentFavorites[0]?.room?.location || "Baneshwor";
     const locationMatches = await prisma.room.count({
@@ -138,6 +117,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
       notifications: recentNotifications,
       messages: sentMessages,
       recommendations,
+      recommendationSource,
     });
   } catch (error) {
     console.error("Get tenant dashboard error:", error);

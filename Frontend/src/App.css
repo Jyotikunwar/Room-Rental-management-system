@@ -254,10 +254,6 @@
 .btn-link:hover {
   text-decoration: underline;
 }
-.w-full {
-  width: 100%;
-  margin-top: 6px;
-}
 
 .auth-toggle {
   text-align: center;

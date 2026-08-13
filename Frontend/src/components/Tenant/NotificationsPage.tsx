@@ -17,7 +17,7 @@ interface NotificationsPageProps {
 // Maps the Sidebar's display labels to this app's TenantView route keys.
 const LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
   "Dashboard": "dashboard",
-  "Find Rooms": "search",
+  "Find Property": "search",
   "Saved Rooms": "saved",
   "My Requests": "requests",
   "Current Rental": "rental",

@@ -8,7 +8,7 @@ import Avatar from "../Avatar";
 
 export const NAV_ITEMS = [
   { label: "Dashboard", icon: LayoutDashboard },
-  { label: "Find Rooms", icon: Search },
+  { label: "Find Property", icon: Search },
   { label: "Saved Rooms", icon: Heart },
   { label: "My Requests", icon: ClipboardList },
   { label: "Current Rental", icon: Building2 },

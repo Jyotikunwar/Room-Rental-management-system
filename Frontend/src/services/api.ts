@@ -6,7 +6,10 @@ export const UPLOAD_BASE_URL = API_BASE;
 export function getImageUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
-  return `${UPLOAD_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+  // Uploaded images are served by the backend; static /images/ assets stay on the frontend origin.
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  if (cleanPath.startsWith("/uploads/")) return `${UPLOAD_BASE_URL}${cleanPath}`;
+  return path;
 }
 export interface PublicStats {
   totalRooms: number;
@@ -32,6 +35,7 @@ export interface User {
   phone?: string;
   role: "TENANT" | "LANDLORD" | "ADMIN";
   avatarUrl?: string;
+  isActive?: boolean;
 }
 
 export interface Amenity {
@@ -67,11 +71,17 @@ export interface Room {
   address?: string;
   latitude?: number;
   longitude?: number;
+  distance?: number | null;
+  similarityScore?: number;
+  popularityScore?: number;
+  finalScore?: number;
   roomType: "SINGLE" | "DOUBLE" | "FLAT" | "APARTMENT";
   price: number;
   securityDeposit?: number;
   availableFrom?: string;
   status: "AVAILABLE" | "BOOKED" | "UNDER_MAINTENANCE";
+  approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  furnishedDetails?: string;
   createdAt?: string;
   roomImages?: RoomImage[];
   roomAmenities?: { amenity: Amenity }[];
@@ -241,6 +251,7 @@ export interface TenantDashboardData {
   notifications: Notification[];
   messages: Inquiry[];
   recommendations: RecommendationResult[];
+  recommendationSource?: "cosine" | "popular";
 }
 
 // Matches your real Complaint model — bookingId-scoped, filed by a tenant
@@ -254,6 +265,8 @@ export interface MaintenanceRequest {
   status: "PENDING" | "IN_PROGRESS" | "RESOLVED" | "REJECTED";
   createdAt: string;
   updatedAt?: string;
+  room?: { id: number; title: string; city: string; location: string };
+  assignedTo?: { id: number; fullName: string };
   booking?: {
     room?: { id: number; title: string; city: string; location: string };
   };
@@ -289,15 +302,31 @@ export interface AdminActivityEntry {
 }
 
 export interface LandlordActivityEntry {
-  id: number;
-  category: "MESSAGE" | "PAYMENT" | "MAINTENANCE" | "SYSTEM";
+  id: string | number;
+  category: "MESSAGE" | "PAYMENT" | "MAINTENANCE" | "PROPERTY" | "TENANT" | "SYSTEM";
   title: string;
   description: string;
   createdAt: string;
+  status?: string;
+  metadata?: {
+    targetRoute?: string;
+    roomId?: number;
+    bookingId?: number;
+    paymentId?: number;
+    complaintId?: number;
+    tenantId?: number;
+    tenantName?: string;
+    tenantEmail?: string;
+    contactId?: number;
+    contactName?: string;
+    roomTitle?: string;
+    amount?: number;
+    actionText?: string;
+    [key: string]: any;
+  };
 }
 
-// NOTE: still not built — unified admin inbox needs new tables for online
-// presence and merged thread grouping on top of your Message model.
+// NOTE: Admin inbox backed by Message model + admin-only routes.
 export interface AdminMessageThread {
   contactId: number;
   contactName: string;
@@ -307,6 +336,7 @@ export interface AdminMessageThread {
   lastMessageAt: string;
   unread: boolean;
   avatarUrl?: string;
+  phone?: string;
 }
 
 export interface AdminThreadMessage {
@@ -326,6 +356,16 @@ export interface AdminContactProfile {
   avatarUrl?: string;
   property?: { title: string; leaseEndDate?: string };
   recentActivity?: { title: string; date: string }[];
+}
+
+export interface AdminMessageContact {
+  id: number;
+  fullName: string;
+  role: "TENANT" | "LANDLORD";
+  email: string;
+  phone?: string;
+  avatarUrl?: string;
+  isOnline?: boolean;
 }
 
 // NOTE: still not built — Landlord/Tenant "reviews" as separate target
@@ -400,6 +440,27 @@ export const api = {
     });
     return res.json();
   },
+  forgotPassword: async (email: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    return res.json();
+  },
+  verifyResetToken: async (token: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/verify-reset-token/${token}`);
+    return res.json();
+  },
+  resetPassword: async (data: { token: string; newPassword: string }) => {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   getCurrentUser: async () => {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       headers: getAuthHeaders(),
@@ -499,6 +560,13 @@ export const api = {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: formData,
+    });
+    return res.json();
+  },
+  deleteRoomImage: async (imageId: number) => {
+    const res = await fetch(`${API_BASE_URL}/rooms/images/${imageId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
     });
     return res.json();
   },
@@ -612,6 +680,27 @@ export const api = {
     });
     return res.json();
   },
+  deleteAdminReview: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/admin/reviews/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminSettings: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/settings`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updateAdminSettings: async (data: { fullName?: string; phone?: string; notificationPrefs?: Record<string, boolean> }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/settings`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
   getTenantReviews: async () => {
     const res = await fetch(`${API_BASE_URL}/landlord/tenant-reviews`, {
       headers: getAuthHeaders(),
@@ -623,6 +712,27 @@ export const api = {
   getAdminStats: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/dashboard`, {
       headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminProperties: async (params?: Record<string, any>) => {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/properties?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminPropertyStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/properties/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  updatePropertyApproval: async (id: number, approvalStatus: "APPROVED" | "REJECTED" | "PENDING") => {
+    const res = await fetch(`${API_BASE_URL}/admin/properties/${id}/approval`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ approvalStatus }),
     });
     return res.json();
   },
@@ -639,9 +749,15 @@ export const api = {
     });
     return res.json();
   },
-  getAdminBookings: async (params?: Record<string, any>) => {
+  getAdminBookings: async (params?: Record<string, string>) => {
     const query = new URLSearchParams(params).toString();
     const res = await fetch(`${API_BASE_URL}/admin/bookings?${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getAdminTenantStats: async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/tenants/stats`, {
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -660,8 +776,31 @@ export const api = {
     return res.json();
   },
   getAdminMaintenanceRequests: async (params?: Record<string, any>) => {
-    const query = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE_URL}/admin/complaints?${query}`, {
+    const query = params ? "?" + new URLSearchParams(params).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/admin/complaints${query}`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  createAdminMaintenanceTicket: async (data: { bookingId: number; title: string; description: string; status?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  updateAdminMaintenanceStatus: async (id: number, status: string) => {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    return res.json();
+  },
+  deleteAdminMaintenanceTicket: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/admin/complaints/${id}`, {
+      method: "DELETE",
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -676,6 +815,11 @@ export const api = {
   },
   getAdminMessageThreads: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/messages/threads`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  getAdminMessageContacts: async (params?: { search?: string; role?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/admin/messages/contacts?${query}`, { headers: getAuthHeaders() });
     return res.json();
   },
   getAdminThreadMessages: async (contactId: number) => {
@@ -694,18 +838,29 @@ export const api = {
     });
     return res.json();
   },
-  getAdminActivity: async (params?: { category?: string; page?: number; limit?: number }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await fetch(`${API_BASE_URL}/admin/activity?${query}`, {
+  getAdminActivity: async (params?: { category?: string; search?: string; page?: number; limit?: number }) => {
+    const query = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/admin/activity${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
   },
 
   // Landlord — activity feed still not built (see LandlordActivityEntry note).
-  getLandlordActivity: async (params?: { category?: string; page?: number }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await fetch(`${API_BASE_URL}/landlord/activity?${query}`, { headers: getAuthHeaders() });
+  getLandlordActivity: async (params?: { category?: string; search?: string; page?: number; limit?: number }) => {
+    const query = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/landlord/activity${query}`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  getLandlordReviews: async () => {
+    const res = await fetch(`${API_BASE_URL}/landlord/reviews`, { headers: getAuthHeaders() });
+    return res.json();
+  },
+  deleteLandlordReview: async (reviewId: number) => {
+    const res = await fetch(`${API_BASE_URL}/landlord/reviews/${reviewId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
     return res.json();
   },
   // NOTE: platform fee concept still not built — no model, no billing logic.
@@ -835,6 +990,21 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/rent-invoices/${id}/remind`, {
       method: "POST",
       headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  confirmLandlordCashReceived: async (id: number) => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/${id}/confirm-cash`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  createRentInvoice: async (data: { bookingId: number; amount: number; dueDate: string; periodStart: string; periodEnd: string }) => {
+    const res = await fetch(`${API_BASE_URL}/rent-invoices/create`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
     });
     return res.json();
   },
@@ -973,8 +1143,15 @@ uploadIdDocument: async (formData: FormData) => {
   });
   return res.json();
 },
-getConversations: async () => {
+  getConversations: async () => {
     const res = await fetch(`${API_BASE_URL}/messages/conversations`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getMessageContacts: async (params?: { search?: string; role?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/messages/contacts?${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
@@ -1057,6 +1234,44 @@ getPublicTestimonials: async () => {
   updateLandlordProfile: async (id: number, data: { fullName?: string; phone?: string }) => {
     const res = await fetch(`${API_BASE_URL}/admin/landlords/${id}`, {
       method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  toggleTenantStatus: async (id: number, isActive: boolean) => {
+    const res = await fetch(`${API_BASE_URL}/admin/tenants/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ isActive }),
+    });
+    return res.json();
+  },
+  updateTenantProfile: async (id: number, data: { fullName?: string; phone?: string; email?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/tenants/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  updateAdminPaymentStatus: async (id: number, status: string) => {
+    const res = await fetch(`${API_BASE_URL}/admin/payments/${id}/status`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    return res.json();
+  },
+  createAdminPayment: async (data: {
+    bookingId: number;
+    amount: number;
+    paymentMethod?: string;
+    status?: string;
+    transactionId?: string;
+  }) => {
+    const res = await fetch(`${API_BASE_URL}/admin/payments`, {
+      method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });

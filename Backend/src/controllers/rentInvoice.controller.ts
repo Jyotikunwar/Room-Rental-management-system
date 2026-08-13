@@ -127,8 +127,8 @@ export const payRentInvoice = async (req: AuthRequest, res: Response) => {
     const { paymentMethod } = req.body;
     const tenantId = req.user!.id;
 
-    if (!paymentMethod || !["ESEWA", "KHALTI", "CASH", "BANK"].includes(paymentMethod)) {
-      return res.status(400).json({ success: false, message: "Valid paymentMethod is required" });
+    if (!paymentMethod || !["CASH"].includes(paymentMethod)) {
+      return res.status(400).json({ success: false, message: "Valid paymentMethod (CASH) is required" });
     }
 
     const invoice = await prisma.rentInvoice.findUnique({
@@ -150,7 +150,6 @@ export const payRentInvoice = async (req: AuthRequest, res: Response) => {
       where: { id: Number(id) },
       data: {
         status: "PAID",
-        paymentMethod: paymentMethod as any,
         transactionId: `RENT-${Date.now()}-${invoice.id}`,
         paidAt: new Date(),
       },
@@ -203,5 +202,97 @@ export const sendRentReminder = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Send rent reminder error:", error);
     return res.status(500).json({ success: false, message: "Failed to send reminder" });
+  }
+};
+
+// POST /api/rent-invoices/:id/confirm-cash (protected - LANDLORD)
+export const confirmLandlordCashReceived = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const landlordId = req.user!.id;
+
+    const invoice = await prisma.rentInvoice.findUnique({
+      where: { id: Number(id) },
+      include: { booking: { include: { room: true, tenant: true } } },
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: "Invoice not found" });
+    }
+    if (invoice.booking.room.landlordId !== landlordId) {
+      return res.status(403).json({ success: false, message: "Not authorized for this invoice" });
+    }
+    if (invoice.status === "PAID") {
+      return res.status(400).json({ success: false, message: "This invoice is already marked as paid" });
+    }
+
+    const updated = await prisma.rentInvoice.update({
+      where: { id: Number(id) },
+      data: {
+        status: "PAID",
+        transactionId: `CASH-REC-${Date.now()}-${invoice.id}`,
+        paidAt: new Date(),
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: invoice.booking.tenantId,
+        title: "Cash Payment Confirmed",
+        message: `Your cash payment of Rs. ${invoice.amount.toLocaleString()} for ${invoice.booking.room.title} has been confirmed by your landlord.`,
+        type: "PAYMENT",
+      },
+    });
+
+    return res.status(200).json({ success: true, message: "Cash payment confirmed successfully", invoice: updated });
+  } catch (error) {
+    console.error("Confirm landlord cash received error:", error);
+    return res.status(500).json({ success: false, message: "Failed to confirm cash payment" });
+  }
+};
+
+// POST /api/rent-invoices/create (protected - LANDLORD)
+export const createRentInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const landlordId = req.user!.id;
+    const { bookingId, amount, dueDate, periodStart, periodEnd } = req.body;
+
+    if (!bookingId || !amount || !dueDate || !periodStart || !periodEnd) {
+      return res.status(400).json({ success: false, message: "Missing required fields for rent invoice" });
+    }
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: Number(bookingId) },
+      include: { room: true, tenant: true },
+    });
+
+    if (!booking || booking.room.landlordId !== landlordId) {
+      return res.status(403).json({ success: false, message: "Booking not found or not owned by landlord" });
+    }
+
+    const invoice = await prisma.rentInvoice.create({
+      data: {
+        bookingId: Number(bookingId),
+        amount: Number(amount),
+        dueDate: new Date(dueDate),
+        periodStart: new Date(periodStart),
+        periodEnd: new Date(periodEnd),
+        status: "PENDING",
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: booking.tenantId,
+        title: "New Rent Invoice Generated",
+        message: `A new rent invoice of Rs. ${Number(amount).toLocaleString()} for ${booking.room.title} is generated. Due date: ${new Date(dueDate).toLocaleDateString()}.`,
+        type: "PAYMENT",
+      },
+    });
+
+    return res.status(201).json({ success: true, message: "Rent invoice created successfully", invoice });
+  } catch (error) {
+    console.error("Create rent invoice error:", error);
+    return res.status(500).json({ success: false, message: "Failed to create rent invoice" });
   }
 };

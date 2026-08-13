@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import {
-  Bell, User as UserIcon, Lock, CreditCard,
-  Trash2, Camera, Check, Plus, ShieldCheck, Upload, AlertTriangle, Loader2,
-  Landmark, Smartphone, Wallet, X,
+  Bell, User as UserIcon, Lock,
+  Trash2, Camera, Check, ShieldCheck, Upload, AlertTriangle, Loader2,
 } from "lucide-react";
-import type { User, PaymentMethod } from "../../services/api";
+import type { User } from "../../services/api";
 import { api } from "../../services/api";
 import type { TenantView } from "./navigation";
 import { Sidebar, type NavLabel } from "./Sidebar";
+import EnterLocationSection from "./EnterLocationSection";
+import Avatar from "../Avatar";
 
 const LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
   "Dashboard": "dashboard",
-  "Find Rooms": "search",
+  "Find Property": "search",
   "Saved Rooms": "saved",
   "My Requests": "requests",
   "Current Rental": "rental",
@@ -24,21 +25,8 @@ interface SettingsPageProps {
   user: User;
   onLogout: () => void;
   onNavigate: (view: TenantView) => void;
+  onUserUpdate?: (user: User) => void;
 }
-
-const METHOD_ICON: Record<PaymentMethod["type"], typeof Landmark> = {
-  ESEWA: Smartphone,
-  KHALTI: Smartphone,
-  BANK: Landmark,
-  CASH: Wallet,
-};
-
-const METHOD_TYPES: { value: PaymentMethod["type"]; label: string }[] = [
-  { value: "ESEWA", label: "eSewa" },
-  { value: "KHALTI", label: "Khalti" },
-  { value: "BANK", label: "Bank Transfer" },
-  { value: "CASH", label: "Cash" },
-];
 
 type IdType = "CITIZENSHIP" | "PASSPORT" | "NATIONAL_ID" | "DRIVING_LICENSE";
 
@@ -83,10 +71,10 @@ function validateIdNumber(idType: string, idNumber: string): string | null {
   return null;
 }
 
-export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPageProps) {
+export default function SettingsPage({ user, onLogout, onNavigate, onUserUpdate }: SettingsPageProps) {
   const [fullName, setFullName] = useState(user.fullName ?? "");
   const [email] = useState(user.email ?? "");
-  const [phone, setPhone] = useState(user.phone ?? "");
+  const [phone] = useState(user.phone ?? "");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -112,32 +100,6 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
-  const [methodsLoading, setMethodsLoading] = useState(true);
-  const [methodsError, setMethodsError] = useState<string | null>(null);
-  const [methodBusyId, setMethodBusyId] = useState<number | null>(null);
-  const [addMethodOpen, setAddMethodOpen] = useState(false);
-  const [newMethodType, setNewMethodType] = useState<PaymentMethod["type"]>("ESEWA");
-  const [newMethodLabel, setNewMethodLabel] = useState("");
-  const [newMethodDetail, setNewMethodDetail] = useState("");
-  const [addingMethod, setAddingMethod] = useState(false);
-
-  const loadMethods = () => {
-    setMethodsLoading(true);
-    api
-      .getPaymentMethods()
-      .then((res) => {
-        if (res.success === false) throw new Error(res.message || "Couldn't load payment methods.");
-        setMethods(res.methods ?? []);
-      })
-      .catch((err) => setMethodsError(err instanceof Error ? err.message : "Couldn't load payment methods."))
-      .finally(() => setMethodsLoading(false));
-  };
-
-  useEffect(() => {
-    loadMethods();
-  }, []);
-
   // Live-validate the ID number as the user types / changes document type.
   useEffect(() => {
     if (!idType && !idNumber) {
@@ -147,54 +109,6 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
     setIdFieldError(validateIdNumber(idType, idNumber));
   }, [idType, idNumber]);
 
-  const handleAddMethod = async () => {
-    if (!newMethodLabel.trim()) return;
-    setAddingMethod(true);
-    try {
-      const res = await api.addPaymentMethod({
-        type: newMethodType,
-        label: newMethodLabel.trim(),
-        detail: newMethodDetail.trim() || undefined,
-      });
-      if (res.success === false) throw new Error(res.message || "Couldn't add payment method.");
-      setMethods((prev) => [...prev.map((m) => ({ ...m, isDefault: res.method.isDefault ? false : m.isDefault })), res.method]);
-      setAddMethodOpen(false);
-      setNewMethodLabel("");
-      setNewMethodDetail("");
-      setNewMethodType("ESEWA");
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't add payment method.");
-    } finally {
-      setAddingMethod(false);
-    }
-  };
-
-  const handleSetDefault = async (id: number) => {
-    setMethodBusyId(id);
-    try {
-      const res = await api.setDefaultPaymentMethod(id);
-      if (res.success === false) throw new Error(res.message || "Couldn't set default.");
-      setMethods((prev) => prev.map((m) => ({ ...m, isDefault: m.id === id })));
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't set default.");
-    } finally {
-      setMethodBusyId(null);
-    }
-  };
-
-  const handleDeleteMethod = async (id: number) => {
-    setMethodBusyId(id);
-    try {
-      const res = await api.deletePaymentMethod(id);
-      if (res.success === false) throw new Error(res.message || "Couldn't remove payment method.");
-      setMethods((prev) => prev.filter((m) => m.id !== id));
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't remove payment method.");
-    } finally {
-      setMethodBusyId(null);
-    }
-  };
-
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileSaving(true);
@@ -203,6 +117,10 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       const res = await api.updateProfile({ fullName, phone });
       if (res.success === false) throw new Error(res.message || "Couldn't save changes.");
       setProfileSaved(true);
+      if (res.user) {
+        const updatedUser = { ...user, ...res.user };
+        onUserUpdate?.(updatedUser);
+      }
       setTimeout(() => setProfileSaved(false), 2000);
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Couldn't save changes.");
@@ -219,7 +137,21 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       formData.append("avatar", file);
       const res = await api.uploadAvatar(formData);
       if (res.success === false) throw new Error(res.message || "Couldn't upload photo.");
-      setAvatarUrl(res.user?.avatarUrl ?? res.avatarUrl ?? "");
+      const newUrl = res.user?.avatarUrl ?? res.avatarUrl ?? "";
+      setAvatarUrl(newUrl);
+      const updatedUser = res.user || { ...user, avatarUrl: newUrl };
+      user.avatarUrl = newUrl;
+      onUserUpdate?.(updatedUser);
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          parsed.avatarUrl = newUrl;
+          localStorage.setItem("user", JSON.stringify(parsed));
+        } catch (e) {
+          console.error("Failed to update user in localStorage", e);
+        }
+      }
     } catch (err) {
       setAvatarError(err instanceof Error ? err.message : "Couldn't upload photo.");
     } finally {
@@ -259,8 +191,23 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
     try {
       const res = await api.updateIdentification({ idType, idNumber: idNumber.trim() });
       if (res.success === false) throw new Error(res.message || "Couldn't save your identification.");
-      setIsIdVerified(false); // any edit resets verification, matches backend behavior
-      setIdMessage({ text: "Identification saved. Pending verification.", ok: true });
+      
+      const updatedUser = res.user || { ...user, idType, idNumber: idNumber.trim() };
+      user.idType = updatedUser.idType;
+      user.idNumber = updatedUser.idNumber;
+      
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.idType = updatedUser.idType;
+          parsed.idNumber = updatedUser.idNumber;
+          localStorage.setItem("user", JSON.stringify(parsed));
+        } catch (e) {}
+      }
+
+      setIsIdVerified(false);
+      setIdMessage({ text: "Identification details saved successfully! Upload your document photo below to complete verification.", ok: true });
     } catch (err) {
       setIdMessage({ text: err instanceof Error ? err.message : "Couldn't save your identification.", ok: false });
     } finally {
@@ -276,9 +223,23 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
       formData.append("document", file);
       const res = await api.uploadIdDocument(formData);
       if (res.success === false) throw new Error(res.message || "Couldn't upload the document.");
-      setIdDocumentUrl(res.user?.idDocumentUrl ?? "");
+      
+      const newDocUrl = res.user?.idDocumentUrl ?? res.idDocumentUrl ?? "";
+      setIdDocumentUrl(newDocUrl);
+
+      user.idDocumentUrl = newDocUrl;
+
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          parsed.idDocumentUrl = newDocUrl;
+          localStorage.setItem("user", JSON.stringify(parsed));
+        } catch (e) {}
+      }
+
       setIsIdVerified(false);
-      setIdMessage({ text: "Document uploaded. Pending verification.", ok: true });
+      setIdMessage({ text: "ID Document uploaded & saved successfully! You are now eligible to book rooms.", ok: true });
     } catch (err) {
       setIdMessage({ text: err instanceof Error ? err.message : "Couldn't upload the document.", ok: false });
     } finally {
@@ -315,13 +276,9 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
             <button onClick={() => onNavigate("notifications")} className="text-stone-400 hover:text-stone-600" aria-label="Notifications">
               <Bell size={19} />
             </button>
-            <button className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200" aria-label="Account">
-              <img
-                src={avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${user.fullName ?? "U"}`}
-                alt={user.fullName}
-                className="h-full w-full object-cover"
-              />
-            </button>
+            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
+              <Avatar name={user.fullName ?? "U"} avatarUrl={avatarUrl || user.avatarUrl} size={32} />
+            </div>
           </div>
         </div>
 
@@ -347,11 +304,7 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
 
             <div className="mb-5 flex items-center gap-4">
               <div className="relative">
-                <img
-                  src={avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${fullName || "U"}`}
-                  alt={fullName}
-                  className="h-16 w-16 rounded-full bg-stone-200 object-cover"
-                />
+                <Avatar name={fullName || "U"} avatarUrl={avatarUrl || user.avatarUrl} size={64} />
                 <label
                   className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-stone-900 text-white hover:bg-stone-800"
                   aria-label="Change photo"
@@ -397,13 +350,12 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-stone-500 sm:col-span-2">
-                Phone Number
+                Phone Number (Set from Signup)
                 <input
                   type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="98XXXXXXXX"
-                  className="rounded-lg border border-stone-200 px-3 py-2 text-sm text-stone-800 outline-none focus:border-blue-500"
+                  value={phone || "Not set"}
+                  disabled
+                  className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-400 outline-none cursor-not-allowed"
                 />
               </label>
               <div className="flex items-center gap-3 sm:col-span-2">
@@ -423,6 +375,8 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
               </div>
             </form>
           </section>
+
+          <EnterLocationSection />
 
           {/* ---- Identity Verification ---- */}
           <section className="mb-6 rounded-2xl border border-stone-200 bg-white p-5">
@@ -560,126 +514,6 @@ export default function SettingsPage({ user, onLogout, onNavigate }: SettingsPag
               {passwordSaving && <Loader2 size={12} className="animate-spin" />}
               Update Password
             </button>
-          </section>
-
-          {/* ---- Payment methods ---- */}
-          <section className="mb-6 rounded-2xl border border-stone-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <CreditCard size={16} className="text-blue-600" />
-              <h3 className="text-sm font-semibold">Payment Methods</h3>
-            </div>
-
-            {methodsLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 size={16} className="animate-spin text-stone-400" />
-              </div>
-            ) : methodsError ? (
-              <p className="py-3 text-xs text-rose-600">{methodsError}</p>
-            ) : (
-              <>
-                {methods.length === 0 ? (
-                  <p className="py-3 text-xs text-stone-400">No payment methods added yet.</p>
-                ) : (
-                  <div className="flex flex-col divide-y divide-stone-100">
-                    {methods.map((m) => {
-                      const Icon = METHOD_ICON[m.type];
-                      return (
-                        <div key={m.id} className="flex items-center justify-between gap-3 py-2.5">
-                          <div className="flex items-center gap-2.5">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                              <Icon size={14} />
-                            </span>
-                            <div>
-                              <p className="flex items-center gap-1.5 text-sm font-medium text-stone-800">
-                                {m.label}
-                                {m.isDefault && (
-                                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
-                                    Default
-                                  </span>
-                                )}
-                              </p>
-                              {m.detail && <p className="text-xs text-stone-500">{m.detail}</p>}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-3">
-                            {methodBusyId === m.id ? (
-                              <Loader2 size={13} className="animate-spin text-stone-400" />
-                            ) : (
-                              <>
-                                {!m.isDefault && (
-                                  <button
-                                    onClick={() => handleSetDefault(m.id)}
-                                    className="text-xs font-medium text-blue-600 hover:underline"
-                                  >
-                                    Set Default
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteMethod(m.id)}
-                                  className="text-stone-400 hover:text-rose-500"
-                                  aria-label="Remove payment method"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {!addMethodOpen ? (
-                  <button
-                    onClick={() => setAddMethodOpen(true)}
-                    className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
-                  >
-                    <Plus size={13} /> Add another payment method
-                  </button>
-                ) : (
-                  <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50/60 p-3.5">
-                    <div className="mb-2.5 flex items-center justify-between">
-                      <p className="text-xs font-semibold text-stone-700">New Payment Method</p>
-                      <button onClick={() => setAddMethodOpen(false)} className="text-stone-400 hover:text-stone-600">
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                      <select
-                        value={newMethodType}
-                        onChange={(e) => setNewMethodType(e.target.value as PaymentMethod["type"])}
-                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none"
-                      >
-                        {METHOD_TYPES.map((t) => (
-                          <option key={t.value} value={t.value}>{t.label}</option>
-                        ))}
-                      </select>
-                      <input
-                        value={newMethodLabel}
-                        onChange={(e) => setNewMethodLabel(e.target.value)}
-                        placeholder="Label (e.g. My eSewa)"
-                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none"
-                      />
-                      <input
-                        value={newMethodDetail}
-                        onChange={(e) => setNewMethodDetail(e.target.value)}
-                        placeholder="Detail (e.g. 98XXXXXX21) — optional"
-                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none sm:col-span-2"
-                      />
-                    </div>
-                    <button
-                      onClick={handleAddMethod}
-                      disabled={addingMethod || !newMethodLabel.trim()}
-                      className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-stone-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
-                    >
-                      {addingMethod && <Loader2 size={12} className="animate-spin" />}
-                      Add Method
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
           </section>
 
           {/* ---- Danger zone ---- */}

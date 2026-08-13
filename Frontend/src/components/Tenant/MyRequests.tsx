@@ -3,7 +3,7 @@ import {
   Search, Bell, MapPin, ChevronDown, User as UserIcon, Loader2, X,
 } from "lucide-react";
 import type { User, Booking, Room } from "../../services/api";
-import { api, UPLOAD_BASE_URL } from "../../services/api";
+import { api, getImageUrl } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
@@ -55,7 +55,7 @@ function formatDate(iso: string) {
 
 function roomImage(room?: Room) {
   const url = room?.roomImages?.[0]?.imageUrl;
-  return url ? `${UPLOAD_BASE_URL}${url}` : "/images/rooms/placeholder.jpg";
+  return url ? getImageUrl(url) || "/images/rooms/placeholder.jpg" : "/images/rooms/placeholder.jpg";
 }
 
 export default function MyRequests({ user, onLogout, onNavigate }: MyRequestsProps) {
@@ -205,7 +205,6 @@ function RequestRow({
   const status = mapStatus(booking.status);
   const room = booking.room;
   const [cancelling, setCancelling] = useState(false);
-  const [payOpen, setPayOpen] = useState(false);
   const [similarOpen, setSimilarOpen] = useState(false);
 
   async function handleCancel() {
@@ -270,20 +269,12 @@ function RequestRow({
             )}
 
             {status === "ACCEPTED" && (
-              <>
-                <button
-                  onClick={() => setPayOpen((v) => !v)}
-                  className="rounded-lg bg-stone-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-stone-800 md:w-full"
-                >
-                  Pay Deposit
-                </button>
-                <button
-                  onClick={() => onNavigate("rental")}
-                  className="rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 md:w-full"
-                >
-                  Proceed to Lease
-                </button>
-              </>
+              <button
+                onClick={() => onNavigate("rental")}
+                className="rounded-lg border border-stone-200 bg-white px-3.5 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 md:w-full"
+              >
+                Proceed to Lease
+              </button>
             )}
 
             {status === "REJECTED" && (
@@ -298,63 +289,9 @@ function RequestRow({
         </div>
       </div>
 
-      {payOpen && (
-        <PayDepositPanel bookingId={booking.id} onClose={() => setPayOpen(false)} onPaid={onChanged} />
-      )}
-
       {similarOpen && room && (
         <SimilarRoomsPanel currentRoomId={room.id} roomType={room.roomType} city={room.city} onClose={() => setSimilarOpen(false)} />
       )}
-    </div>
-  );
-}
-
-function PayDepositPanel({ bookingId, onClose, onPaid }: { bookingId: number; onClose: () => void; onPaid: () => void }) {
-  const [method, setMethod] = useState<"ESEWA" | "KHALTI" | "BANK" | "CASH">("ESEWA");
-  const [paying, setPaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handlePay() {
-    setPaying(true);
-    setError(null);
-    try {
-      const res = await api.createPayment(bookingId, method);
-      if (res.success === false) throw new Error(res.message || "Payment failed.");
-      onPaid();
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Payment failed.");
-    } finally {
-      setPaying(false);
-    }
-  }
-
-  return (
-    <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3.5">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-semibold text-stone-700">Pay Deposit</p>
-        <button onClick={onClose} className="text-stone-400 hover:text-stone-600"><X size={14} /></button>
-      </div>
-      {error && <p className="mb-2 text-xs font-medium text-rose-600">{error}</p>}
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={method}
-          onChange={(e) => setMethod(e.target.value as typeof method)}
-          className="rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-600 outline-none"
-        >
-          <option value="ESEWA">eSewa</option>
-          <option value="KHALTI">Khalti</option>
-          <option value="BANK">Bank Transfer</option>
-          <option value="CASH">Cash</option>
-        </select>
-        <button
-          onClick={handlePay}
-          disabled={paying}
-          className="rounded-lg bg-stone-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
-        >
-          {paying ? "Processing..." : "Confirm Payment"}
-        </button>
-      </div>
     </div>
   );
 }

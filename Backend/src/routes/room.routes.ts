@@ -8,8 +8,9 @@ import {
   getMyRooms,
   getRoomRecommendations,
   uploadRoomImages,
+  deleteRoomImage,
 } from "../controllers/room.controller";
-import { authenticate, authorize } from "../middleware/auth.middleware";
+import { authenticate, authorize, optionalAuthenticate } from "../middleware/auth.middleware";
 import { upload } from "../middleware/upload.middleware";
 
 const router = Router();
@@ -24,6 +25,7 @@ router.post("/", authenticate, authorize("LANDLORD", "ADMIN"), createRoom);
 // silently 404ing because Express only matches the exact method registered.
 router.patch("/:id", authenticate, authorize("LANDLORD", "ADMIN"), updateRoom);
 router.delete("/:id", authenticate, authorize("LANDLORD", "ADMIN"), deleteRoom);
+router.delete("/images/:imageId", authenticate, authorize("LANDLORD", "ADMIN"), deleteRoomImage);
 router.post(
   "/:id/images",
   authenticate,

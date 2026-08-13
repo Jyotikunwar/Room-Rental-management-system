@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { Room, RecommendationResult, User } from "../services/api";
-import { api } from "../services/api";
+import { api, getImageUrl } from "../services/api";
 import { X, MapPin, User as UserIcon, Phone, Star, Send, MessageSquare, CheckCircle2, Sparkles, AlertCircle } from "lucide-react";
 
 interface RoomDetailModalProps {
@@ -86,9 +86,11 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
     }
   };
 
-  const primaryImage = room.roomImages && room.roomImages.length > 0
-    ? `http://localhost:5000${room.roomImages[0].imageUrl}`
-    : "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80";
+  const primaryImage =
+    room.roomImages && room.roomImages.length > 0
+      ? getImageUrl(room.roomImages[0].imageUrl) ||
+        "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80"
+      : "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80";
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

@@ -18,18 +18,20 @@ export default function Testimonials() {
     (async () => {
       try {
         const res = await api.getPublicTestimonials();
-        if (res.success) setTestimonials(res.testimonials || []);
+        if (res.success) {
+          setTestimonials(res.testimonials || []);
+        }
       } catch (e) {
-        console.error("Failed to load testimonials:", e);
+        console.error("Failed to load testimonials from backend:", e);
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  // Nothing to show yet — don't render a fake/empty-looking section on a
-  // brand new platform with no reviews.
   if (!loading && testimonials.length === 0) return null;
+
+
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-16">

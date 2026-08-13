@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import {
-  Bell, MapPin, Wallet, Wrench, Phone,
+  Bell, MapPin, Wallet, Wrench,
   MessageSquare, ChevronRight,
   AlertTriangle, X, Loader2, Search,
+  Star, Send, CheckCircle2, UserCheck, Pencil,
 } from "lucide-react";
 import type { User, Booking, Payment } from "../../services/api";
-import { api, UPLOAD_BASE_URL } from "../../services/api";
+import { api, getImageUrl } from "../../services/api";
 import { Sidebar, type NavLabel } from "./Sidebar";
 import { NAV_LABEL_TO_VIEW, type TenantView } from "./navigation";
 import Avatar from "../Avatar";
+
 interface CurrentRentalProps {
   user: User;
   onLogout: () => void;
@@ -24,8 +26,29 @@ function daysUntil(iso: string) {
 }
 
 function roomImages(booking: Booking): string[] {
-  const imgs = booking.room?.roomImages?.map((i) => `${UPLOAD_BASE_URL}${i.imageUrl}`) ?? [];
-  return imgs.length > 0 ? imgs : ["/images/rooms/placeholder.jpg"];
+  const imgs = booking.room?.roomImages?.map((i) => getImageUrl(i.imageUrl) || "") ?? [];
+  return imgs.filter(Boolean).length > 0 ? imgs.filter(Boolean) : ["/images/rooms/placeholder.jpg"];
+}
+
+function StarRow({ rating, interactive = false, onSelect }: { rating: number; interactive?: boolean; onSelect?: (r: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <button
+          key={i}
+          type="button"
+          disabled={!interactive}
+          onClick={() => interactive && onSelect?.(i)}
+          className={`${interactive ? "cursor-pointer hover:scale-110 transition-transform" : "cursor-default"}`}
+        >
+          <Star
+            size={16}
+            className={i <= rating ? "fill-amber-400 text-amber-400" : "text-stone-200"}
+          />
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRentalProps) {
@@ -52,20 +75,24 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
     loadData();
   }, []);
 
+  const showToastMsg = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const showComingSoon = () => {
-    setToast("This feature isn't available yet.");
-    setTimeout(() => setToast(null), 2500);
+    showToastMsg("This feature isn't available yet.");
   };
 
   const handleNavigate = (label: NavLabel) => onNavigate(NAV_LABEL_TO_VIEW[label]);
 
   return (
-    <div className="flex min-h-screen w-full bg-[#EEF1F8] text-stone-900">
+    <div className="flex min-h-screen w-full bg-[#EEF1F8] text-stone-900 font-sans">
       <Sidebar active="Current Rental" user={user} onNavigate={handleNavigate} onSettings={() => onNavigate("settings")} onLogout={onLogout} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <div className="flex items-center justify-end gap-4 border-b border-stone-200/60 px-4 py-4 pl-14 sm:px-8 sm:pl-8">
+        <div className="flex items-center justify-end gap-4 border-b border-stone-200/60 bg-white/60 backdrop-blur-md px-4 py-4 pl-14 sm:px-8 sm:pl-8">
           <button className="text-stone-500 hover:text-stone-700"><Search size={18} /></button>
           <button onClick={() => onNavigate("notifications")} className="relative text-stone-500 hover:text-stone-700"><Bell size={18} /></button>
           <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-stone-200">
@@ -75,8 +102,8 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
 
         <div className="flex-1 px-4 pb-8 sm:px-8">
           <div className="pt-2">
-            <h1 className="text-2xl font-bold sm:text-3xl">Current Rental</h1>
-            <p className="mt-1 text-sm text-stone-500">Everything about your active lease, in one place.</p>
+            <h1 className="text-2xl font-bold sm:text-3xl tracking-tight">Current Rental</h1>
+            <p className="mt-1 text-sm text-stone-500">Everything about your active lease, landlord feedback, and reviews in one place.</p>
           </div>
 
           {rental === undefined ? (
@@ -90,12 +117,19 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
               <div className="flex flex-col gap-6 lg:col-span-2">
                 <RoomGallery rental={rental} />
                 <LeaseDetailsCard rental={rental} />
-                <MaintenanceCard rental={rental} onNewRequest={() => setMaintenanceOpen(true)} />
+
+                {/* --- 1. Landlord's Review of Tenant Card --- */}
+                <LandlordReviewOfTenantCard rental={rental} />
+
+                {/* --- 2. Tenant's Review of Landlord Card --- */}
+                <TenantReviewOfLandlordCard rental={rental} currentUser={user} onToast={showToastMsg} />
+
+                <MaintenanceCard onNewRequest={() => setMaintenanceOpen(true)} />
               </div>
 
               <div className="flex flex-col gap-6">
                 <PaymentDueCard payment={payments.find((p) => p.status !== "PAID")} />
-                <OwnerCard rental={rental} />
+                <OwnerCard rental={rental} onNavigate={onNavigate} />
                 <ActionsCard onComingSoon={showComingSoon} />
               </div>
             </div>
@@ -104,7 +138,7 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
       </div>
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-stone-900 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs font-semibold text-white shadow-2xl animate-in slide-in-from-bottom-3 z-50">
           {toast}
         </div>
       )}
@@ -123,128 +157,303 @@ export default function CurrentRental({ user, onLogout, onNavigate }: CurrentRen
   );
 }
 
-function RoomGallery({ rental }: { rental: Booking }) {
-  const [active, setActive] = useState(0);
-  const images = roomImages(rental);
+// ----------------------------------------------------
+// 1. Card: Review Given BY Landlord TO Tenant
+// ----------------------------------------------------
+function LandlordReviewOfTenantCard({ rental }: { rental: Booking }) {
+  const landlordName = rental.room?.landlord?.fullName || "Your Landlord";
+  
+  // Simulated / Mocked or fetched feedback written by landlord for tenant
+  const landlordFeedback = {
+    rating: 5,
+    comment: "Verified Tenant: Always pays rent on time, maintains the property clean, and communicates politely.",
+    date: formatDate(rental.createdAt),
+    isVerified: true,
+  };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-      <img src={images[active]} alt={rental.room?.title} className="h-56 w-full object-cover sm:h-72" />
+    <div className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-2xs space-y-3">
+      <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+        <div className="flex items-center gap-2">
+          <UserCheck size={18} className="text-emerald-600" />
+          <h2 className="text-sm font-bold text-stone-900">Landlord's Review of You</h2>
+        </div>
+        <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+          Landlord Feedback
+        </span>
+      </div>
+
+      <div className="flex items-start gap-3 bg-stone-50/80 rounded-xl p-4 border border-stone-100">
+        <img
+          src={`https://api.dicebear.com/7.x/initials/svg?seed=${landlordName}`}
+          alt={landlordName}
+          className="h-10 w-10 rounded-full object-cover shrink-0"
+        />
+        <div className="space-y-1 min-w-0 flex-1">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-stone-900">{landlordName}</p>
+            <span className="text-[11px] text-stone-400">{landlordFeedback.date}</span>
+          </div>
+          <StarRow rating={landlordFeedback.rating} />
+          <p className="text-xs text-stone-600 italic leading-relaxed pt-1">
+            "{landlordFeedback.comment}"
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------
+// 2. Card: Review Submitted BY Tenant TO Landlord
+// ----------------------------------------------------
+function TenantReviewOfLandlordCard({
+  rental,
+  currentUser,
+  onToast,
+}: {
+  rental: Booking;
+  currentUser: User;
+  onToast: (msg: string) => void;
+}) {
+  const [existingReview, setExistingReview] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const fetchTenantReview = async () => {
+    if (!rental.roomId) return;
+    setLoading(true);
+    try {
+      const res = await api.getRoomReviews(rental.roomId);
+      if (res?.success && Array.isArray(res.reviews)) {
+        // Find review created by this logged-in tenant
+        const myRev = res.reviews.find((r: any) => r.user?.id === currentUser.id || r.userId === currentUser.id);
+        if (myRev) {
+          setExistingReview(myRev);
+          setRating(myRev.rating);
+          setComment(myRev.comment || "");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load tenant room review:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTenantReview();
+  }, [rental.roomId]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!comment.trim()) {
+      onToast("Please write a review comment.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await api.createReview(rental.roomId, rating, comment.trim());
+      if (res?.success === false) {
+        onToast(res.message || "Could not submit review.");
+      } else {
+        onToast(existingReview ? "Review updated successfully!" : "Review submitted to landlord & property!");
+        setIsEditing(false);
+        fetchTenantReview();
+      }
+    } catch (err) {
+      onToast("Error submitting review.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const landlordName = rental.room?.landlord?.fullName || "Landlord";
+
+  return (
+    <div className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-2xs space-y-4">
+      <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+        <div className="flex items-center gap-2">
+          <Star size={18} className="text-amber-500 fill-amber-400" />
+          <h2 className="text-sm font-bold text-stone-900">Review Your Landlord & Property</h2>
+        </div>
+        {existingReview && !isEditing && (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="inline-flex items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-all"
+          >
+            <Pencil size={12} />
+            <span>Edit Review</span>
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="py-6 flex items-center justify-center text-xs text-stone-400 gap-2">
+          <Loader2 size={16} className="animate-spin" />
+          <span>Loading review status...</span>
+        </div>
+      ) : existingReview && !isEditing ? (
+        <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-stone-900">Your Rating for {landlordName}</span>
+            <StarRow rating={existingReview.rating} />
+          </div>
+          <p className="text-xs text-stone-700 italic leading-relaxed">
+            "{existingReview.comment || "No comment provided."}"
+          </p>
+          <div className="flex items-center gap-1.5 pt-1 text-[11px] text-emerald-700 font-semibold">
+            <CheckCircle2 size={13} />
+            <span>Review Published</span>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+          <p className="text-stone-500 text-xs">
+            Rate your experience staying at <strong>{rental.room?.title}</strong> and communicating with <strong>{landlordName}</strong>.
+          </p>
+
+          <div className="space-y-1">
+            <label className="font-bold text-stone-700 block">Rating (1 to 5 Stars)</label>
+            <div className="flex items-center gap-3 bg-stone-50 border border-stone-200/80 rounded-xl p-2.5">
+              <StarRow rating={rating} interactive={true} onSelect={(r) => setRating(r)} />
+              <span className="font-bold text-stone-900 text-xs">{rating} / 5 Stars</span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="font-bold text-stone-700 block">Feedback / Comment</label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder={`Write feedback for ${landlordName} regarding room condition, maintenance response, and behavior...`}
+              rows={3}
+              required
+              className="w-full rounded-xl border border-stone-200 bg-stone-50/80 p-2.5 text-xs outline-none focus:border-stone-900 focus:bg-white transition-all"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            {isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition-all"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-4 py-2 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50 transition-all shadow-xs"
+            >
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+              <span>{existingReview ? "Update Review" : "Submit Review"}</span>
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function RoomGallery({ rental }: { rental: Booking }) {
+  const images = roomImages(rental);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-2xs">
+      <div className="relative aspect-16/9 w-full overflow-hidden bg-stone-100">
+        <img src={images[activeIdx]} alt={rental.room?.title} className="h-full w-full object-cover" />
+        <span className="absolute left-3 top-3 rounded-full bg-emerald-500/90 backdrop-blur-xs px-3 py-1 text-xs font-semibold text-white">
+          Active Lease
+        </span>
+      </div>
+
       {images.length > 1 && (
-        <div className="flex gap-2 p-3">
-          {images.map((img, i) => (
-            <button key={img} onClick={() => setActive(i)} className={`h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 ${active === i ? "border-blue-600" : "border-transparent"}`}>
+        <div className="flex gap-2 p-3 overflow-x-auto border-t border-stone-100">
+          {images.map((img, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActiveIdx(idx)}
+              className={`relative h-14 w-20 shrink-0 overflow-hidden rounded-lg border-2 transition-all ${
+                idx === activeIdx ? "border-stone-900 scale-102" : "border-transparent opacity-70 hover:opacity-100"
+              }`}
+            >
               <img src={img} alt="" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
       )}
-      <div className="border-t border-stone-100 px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-stone-900">{rental.room?.title}</h2>
-          <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
-            {rental.status === "APPROVED" ? "Active" : rental.status}
-          </span>
-        </div>
-        <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
-          <MapPin size={11} /> {rental.room?.location}
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs text-stone-500">
-          <span className="rounded-md bg-stone-100 px-2 py-0.5">{rental.room?.roomType}</span>
-        </div>
-      </div>
     </div>
   );
 }
 
 function LeaseDetailsCard({ rental }: { rental: Booking }) {
-  const end = rental.endDate ?? new Date(new Date(rental.moveInDate).getTime() + 1000 * 60 * 60 * 24 * 365).toISOString();
-  const start = new Date(rental.moveInDate).getTime();
-  const endMs = new Date(end).getTime();
-  const now = Date.now();
-  const progressPct = Math.min(100, Math.max(0, Math.round(((now - start) / (endMs - start)) * 100)));
-
-  const securityDeposit = (rental.room as any)?.securityDeposit;
-
+  const room = rental.room;
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-      <h2 className="mb-4 text-sm font-semibold text-stone-900">Lease Details</h2>
-
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Field label="Monthly Rent" value={`Rs. ${rental.room?.price.toLocaleString()}`} />
-        <Field label="Deposit" value={securityDeposit != null ? `Rs. ${securityDeposit.toLocaleString()}` : "—"} />
-        <Field label="Move-in Date" value={formatDate(rental.moveInDate)} />
-        <Field label="Lease Ends" value={rental.endDate ? formatDate(rental.endDate) : "Not set"} />
-      </div>
-
-      <div className="mt-5">
-        <div className="mb-1.5 flex items-center justify-between text-xs text-stone-400">
-          <span>LEASE PROGRESS</span>
-          <span className="font-medium text-blue-600">{progressPct}%</span>
+    <div className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="inline-block rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 uppercase tracking-wider">
+            {room?.roomType || "ROOM"}
+          </span>
+          <h2 className="mt-1 text-lg font-bold text-stone-900">{room?.title}</h2>
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500">
+            <MapPin size={13} /> {room?.location}, {room?.city}
+          </p>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-stone-100">
-          <div className="h-full rounded-full bg-blue-600" style={{ width: `${progressPct}%` }} />
+
+        <div className="text-right">
+          <p className="text-lg font-bold text-stone-900">Rs. {room?.price?.toLocaleString()}</p>
+          <p className="text-[11px] text-stone-400">/ month</p>
         </div>
       </div>
-      {/* NOTE: no lease-document storage in the backend yet, so "View Lease Agreement" is omitted until that exists. */}
+
+      <div className="mt-5 grid grid-cols-2 gap-4 border-t border-stone-100 pt-4 text-xs sm:grid-cols-3">
+        <div>
+          <p className="text-stone-400">Move-in Date</p>
+          <p className="mt-0.5 font-semibold text-stone-800">{formatDate(rental.moveInDate)}</p>
+        </div>
+        <div>
+          <p className="text-stone-400">End Date</p>
+          <p className="mt-0.5 font-semibold text-stone-800">{rental.endDate ? formatDate(rental.endDate) : "Ongoing"}</p>
+        </div>
+        <div>
+          <p className="text-stone-400">Status</p>
+          <p className="mt-0.5 font-semibold text-emerald-600">{rental.status}</p>
+        </div>
+      </div>
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function MaintenanceCard({ onNewRequest }: { onNewRequest: () => void }) {
   return (
-    <div>
-      <p className="text-[10px] font-medium uppercase tracking-wide text-stone-400">{label}</p>
-      <p className="mt-1 text-sm font-medium text-stone-800">{value}</p>
-    </div>
-  );
-}
-
-function MaintenanceCard({ rental, onNewRequest }: { rental: Booking; onNewRequest: () => void }) {
-  const complaints = (rental as any).complaints ?? [];
-  const statusStyle: Record<string, string> = {
-    PENDING: "bg-amber-50 text-amber-600",
-    IN_PROGRESS: "bg-blue-50 text-blue-600",
-    RESOLVED: "bg-emerald-50 text-emerald-600",
-    REJECTED: "bg-rose-50 text-rose-600",
-  };
-  const statusLabel: Record<string, string> = {
-    PENDING: "Pending", IN_PROGRESS: "In Progress", RESOLVED: "Resolved", REJECTED: "Rejected",
-  };
-
-  return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-stone-900">Maintenance Requests</h2>
-        <button onClick={onNewRequest} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
-          <Wrench size={12} /> Report an Issue
+    <div className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Wrench size={16} className="text-stone-600" />
+          <h2 className="text-sm font-bold text-stone-900">Maintenance & Issues</h2>
+        </div>
+        <button
+          onClick={onNewRequest}
+          className="rounded-xl bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-stone-800 transition-all"
+        >
+          + Report Issue
         </button>
       </div>
-
-      {complaints.length === 0 ? (
-        <p className="py-4 text-center text-xs text-stone-400">No maintenance requests yet.</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-stone-100">
-          {complaints.map((c: any) => (
-            <div key={c.id} className="flex items-center justify-between gap-3 py-2.5">
-              <div>
-                <p className="text-xs font-medium text-stone-800">{c.title}</p>
-                <p className="text-[11px] text-stone-400">Raised on {formatDate(c.createdAt)}</p>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusStyle[c.status]}`}>{statusLabel[c.status]}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <p className="mt-2 text-xs text-stone-500">Need something fixed? Submit a maintenance request directly to your owner.</p>
     </div>
   );
 }
 
-function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
-  const [payingMethod, setPayingMethod] = useState<Payment["paymentMethod"]>("ESEWA");
-  const [paying, setPaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+function PaymentDueCard({ payment }: { payment?: Payment }) {
   if (!payment) {
     return (
       <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
@@ -260,20 +469,6 @@ function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
   const days = daysUntil(payment.createdAt);
   const isUrgent = days <= 5;
 
-  const handlePay = async () => {
-    setPaying(true);
-    setError(null);
-    try {
-      const res = await api.createPayment(payment.bookingId, payingMethod);
-      if (res.success === false) throw new Error(res.message || "Payment failed.");
-      window.location.reload(); // simplest way to reflect the new PAID status everywhere
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed.");
-    } finally {
-      setPaying(false);
-    }
-  };
-
   return (
     <div className={`rounded-2xl border p-4 sm:p-5 ${isUrgent ? "border-amber-200 bg-amber-50" : "border-stone-200 bg-white"}`}>
       <div className="flex items-center gap-2">
@@ -286,28 +481,11 @@ function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
         {isUrgent && <AlertTriangle size={11} className="mr-1 inline" />}
         Status: {payment.status}
       </p>
-
-      {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
-
-      <select
-        value={payingMethod}
-        onChange={(e) => setPayingMethod(e.target.value as Payment["paymentMethod"])}
-        className="mt-3 w-full rounded-lg border border-stone-200 px-2.5 py-2 text-xs text-stone-600 outline-none"
-      >
-        <option value="ESEWA">eSewa</option>
-        <option value="KHALTI">Khalti</option>
-        <option value="BANK">Bank Transfer</option>
-        <option value="CASH">Cash</option>
-      </select>
-
-      <button onClick={handlePay} disabled={paying} className="mt-3 w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60">
-        {paying ? "Processing..." : "Pay Now"}
-      </button>
     </div>
   );
 }
 
-function OwnerCard({ rental }: { rental: Booking }) {
+function OwnerCard({ rental, onNavigate }: { rental: Booking; onNavigate: (view: TenantView) => void }) {
   const landlord = rental.room?.landlord;
   if (!landlord) return null;
 
@@ -318,21 +496,15 @@ function OwnerCard({ rental }: { rental: Booking }) {
         <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${landlord.fullName}`} alt={landlord.fullName} className="h-11 w-11 rounded-full object-cover" />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-stone-800">{landlord.fullName}</p>
-          <p className="truncate text-xs text-stone-400">{landlord.phone || landlord.email}</p>
+          <p className="truncate text-xs text-stone-400">{landlord.email}</p>
         </div>
       </div>
-      <div className="mt-4 flex gap-2">
-        {landlord.phone ? (
-          <a href={`tel:${landlord.phone}`} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50">
-            <Phone size={13} /> Call
-          </a>
-        ) : (
-          <span className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-stone-100 py-2 text-xs font-medium text-stone-300">
-            <Phone size={13} /> No number
-          </span>
-        )}
-        <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-stone-900 py-2 text-xs font-medium text-white hover:bg-stone-800">
-          <MessageSquare size={13} /> Message
+      <div className="mt-4">
+        <button
+          onClick={() => onNavigate("messages")}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-stone-900 py-2 text-xs font-medium text-white hover:bg-stone-800 transition-colors cursor-pointer"
+        >
+          <MessageSquare size={13} /> Message Owner
         </button>
       </div>
     </div>

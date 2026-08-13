@@ -1,8 +1,12 @@
 import { Request, Response } from "express";
+import crypto from "crypto";
 import prisma from "../lib/prisma";
 import { hashPassword, comparePassword } from "../lib/bcrypt";
 import { signToken } from "../lib/jwt";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { sendPasswordResetEmail } from "../services/email.service";
+
+
 
 const DEFAULT_NOTIFICATION_PREFS = {
   payments: true,
@@ -240,7 +244,7 @@ export const updateIdentification = async (req: AuthRequest, res: Response) => {
         idNumber,
         isIdVerified: false, // any change to ID info resets verification — an admin re-checks it
       },
-      select: { id: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
+      select: { id: true, fullName: true, email: true, phone: true, role: true, avatarUrl: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
     });
 
     res.json({ success: true, user });
@@ -250,9 +254,7 @@ export const updateIdentification = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// POST /api/auth/me/identification/document (multipart/form-data, field name: "document")
-// Reuses the same multer setup as uploadRoomImages — adjust the field/path
-// to match however your upload.middleware.ts is configured.
+// POST /api/auth/me/identification/document or /api/auth/me/id-document
 export const uploadIdDocument = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -262,17 +264,177 @@ export const uploadIdDocument = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: "No document uploaded" });
     }
 
-    const documentUrl = `/uploads/identification/${file.filename}`;
+    const documentUrl = `/uploads/${file.filename}`;
 
     const user = await prisma.user.update({
       where: { id: userId },
       data: { idDocumentUrl: documentUrl, isIdVerified: false },
-      select: { id: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
+      select: { id: true, fullName: true, email: true, phone: true, role: true, avatarUrl: true, idType: true, idNumber: true, idDocumentUrl: true, isIdVerified: true },
     });
 
-    res.json({ success: true, user });
+    res.json({ success: true, user, idDocumentUrl: documentUrl });
   } catch (error) {
     console.error("Upload ID document error:", error);
     res.status(500).json({ success: false, message: "Something went wrong" });
   }
 };
+
+// POST /api/auth/forgot-password
+// Generates a password reset token expiring strictly in 2 MINUTES (120 seconds)
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required" });
+    }
+
+    const formattedEmail = String(email).trim().toLowerCase();
+    if (!formattedEmail.endsWith("@gmail.com")) {
+      return res.status(400).json({ success: false, message: "Email must end with @gmail.com" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: formattedEmail } });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email address.",
+      });
+    }
+
+    // Generate a secure 32-character hexadecimal reset token
+    const rawToken = crypto.randomBytes(20).toString("hex");
+    
+    // Set expiration strictly to 2 MINUTES (120 seconds) from now
+    const EXPIRATION_MINUTES = 2;
+    const expiresAt = new Date(Date.now() + EXPIRATION_MINUTES * 60 * 1000);
+
+    // Save token in DB
+    await (prisma as any).passwordResetToken.create({
+      data: {
+        email: formattedEmail,
+        token: rawToken,
+        expiresAt,
+        used: false,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Account verified! Set your new password within ${EXPIRATION_MINUTES} minutes.`,
+      token: rawToken,
+      expiresAt: expiresAt.toISOString(),
+      expiresInSeconds: EXPIRATION_MINUTES * 60,
+    });
+
+
+  } catch (error: any) {
+    console.error("Forgot password error:", error);
+    return res.status(500).json({ success: false, message: "Failed to process forgot password request", error: error.message });
+  }
+};
+
+// GET /api/auth/verify-reset-token/:token
+export const verifyResetToken = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Token is required" });
+    }
+
+    const record = await (prisma as any).passwordResetToken.findUnique({
+      where: { token: String(token) },
+    });
+
+    if (!record || record.used) {
+      return res.status(400).json({ success: false, message: "Invalid or already used password reset token" });
+    }
+
+    if (new Date() > new Date(record.expiresAt)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password reset link has expired (link is valid for 2 minutes only). Please request a new link.",
+        isExpired: true,
+      });
+    }
+
+    const remainingMs = new Date(record.expiresAt).getTime() - Date.now();
+    const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+
+    return res.status(200).json({
+      success: true,
+      email: record.email,
+      remainingSeconds,
+    });
+  } catch (error: any) {
+    console.error("Verify reset token error:", error);
+    return res.status(500).json({ success: false, message: "Failed to verify token", error: error.message });
+  }
+};
+
+// POST /api/auth/reset-password
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, message: "Token and newPassword are required" });
+    }
+
+    // Password validations
+    const passStr = String(newPassword);
+    if (passStr.length < 8) {
+      return res.status(400).json({ success: false, message: "Password must be at least 8 characters long" });
+    }
+    if (!/[A-Z]/.test(passStr)) {
+      return res.status(400).json({ success: false, message: "Password must contain at least one uppercase letter" });
+    }
+    if (!/[0-9]/.test(passStr)) {
+      return res.status(400).json({ success: false, message: "Password must contain at least one digit" });
+    }
+    if (!/[^A-Za-z0-9]/.test(passStr)) {
+      return res.status(400).json({ success: false, message: "Password must contain at least one special character" });
+    }
+
+    const record = await (prisma as any).passwordResetToken.findUnique({
+      where: { token: String(token) },
+    });
+
+    if (!record || record.used) {
+      return res.status(400).json({ success: false, message: "Invalid or already used password reset token" });
+    }
+
+    // STRICT 2-MINUTE EXPIRATION CHECK
+    if (new Date() > new Date(record.expiresAt)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password reset link has expired (strictly 2 minutes time limit). Please request a new link.",
+        isExpired: true,
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: record.email } });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Hash new password and update user
+    const hashed = await hashPassword(passStr);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashed },
+    });
+
+    // Mark token as used
+    await (prisma as any).passwordResetToken.update({
+      where: { id: record.id },
+      data: { used: true },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Password has been reset successfully! You can now log in with your new password.",
+    });
+  } catch (error: any) {
+    console.error("Reset password error:", error);
+    return res.status(500).json({ success: false, message: "Failed to reset password", error: error.message });
+  }
+};

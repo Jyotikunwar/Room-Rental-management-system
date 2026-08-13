@@ -1,6 +1,7 @@
 import { Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { resolveDashboardRecommendations } from "../services/recommendation.service";
 
 // GET /api/tenant/dashboard (protected - TENANT)
 // Combines several small queries into one response for the dashboard page.
@@ -8,7 +9,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.user!.id;
 
-    const [availableRoomsCount, savedRooms, activeBooking, notifications, messages, favoritesCount] =
+    const [availableRoomsCount, savedRooms, activeBooking, notifications, messages, favoritesCount, recommendationData] =
       await Promise.all([
         prisma.room.count({ where: { status: "AVAILABLE" } }),
         prisma.favorite.findMany({
@@ -19,7 +20,10 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
         }),
         prisma.booking.findFirst({
           where: { tenantId, status: "APPROVED" },
-          include: { room: true, payment: true },
+          include: {
+            room: { include: { roomImages: true } },
+            payment: true,
+          },
           orderBy: { createdAt: "desc" },
         }),
         prisma.notification.findMany({
@@ -34,6 +38,7 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
           take: 5,
         }),
         prisma.favorite.count({ where: { userId: tenantId } }),
+        resolveDashboardRecommendations(tenantId, 6),
       ]);
 
     const pendingRequestsCount = await prisma.booking.count({
@@ -79,7 +84,8 @@ export const getTenantDashboard = async (req: AuthRequest, res: Response) => {
       recentSaved: savedRooms,
       notifications,
       messages,
-      recommendations: [], // Recommendation engine not implemented yet
+      recommendations: recommendationData.recommendations,
+      recommendationSource: recommendationData.source,
     });
   } catch (error) {
     console.error("Get tenant dashboard error:", error);
@@ -120,28 +126,78 @@ export const getCurrentRental = async (req: AuthRequest, res: Response) => {
 // GET /api/admin/dashboard (protected - ADMIN)
 export const getAdminStats = async (req: AuthRequest, res: Response) => {
   try {
-    const [totalUsers, totalRooms, totalLandlords, totalTenants, totalBookings, totalRevenue] = await Promise.all([
-      prisma.user.count(),
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const past30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalProperties,
+      vacantProperties,
+      bookedProperties,
+      activeTenantIds,
+      pendingMaintenance,
+      maintenanceRequests,
+      monthlyRevenueAgg,
+      rentDueAgg,
+      leaseExpiring,
+      recentMoveOuts,
+      totalUsers,
+      totalLandlords,
+      totalTenants,
+      totalBookings,
+    ] = await Promise.all([
       prisma.room.count(),
+      prisma.room.count({ where: { status: "AVAILABLE" } }),
+      prisma.room.count({ where: { status: "BOOKED" } }),
+      prisma.booking.findMany({
+        where: { status: "APPROVED" },
+        select: { tenantId: true },
+        distinct: ["tenantId"],
+      }),
+      prisma.complaint.count({ where: { status: { in: ["PENDING", "IN_PROGRESS"] } } }),
+      prisma.complaint.count(),
+      prisma.payment.aggregate({
+        where: { status: "PAID", paidAt: { gte: startOfMonth } },
+        _sum: { amount: true },
+      }),
+      prisma.payment.aggregate({
+        where: { status: { in: ["PENDING", "FAILED"] } },
+        _sum: { amount: true },
+      }),
+      prisma.booking.count({
+        where: { status: "APPROVED", endDate: { gte: now, lte: in30Days } },
+      }),
+      prisma.booking.count({
+        where: { status: "COMPLETED", endDate: { gte: past30Days, lte: now } },
+      }),
+      prisma.user.count(),
       prisma.user.count({ where: { role: "LANDLORD" } }),
       prisma.user.count({ where: { role: "TENANT" } }),
       prisma.booking.count(),
-      prisma.payment.aggregate({ _sum: { amount: true }, where: { status: "PAID" } }),
     ]);
 
     return res.status(200).json({
       success: true,
       stats: {
+        totalProperties,
+        activeTenants: activeTenantIds.length,
+        vacantProperties,
+        pendingMaintenance,
+        occupancyRate: totalProperties > 0 ? Math.round((bookedProperties / totalProperties) * 100) : 0,
+        monthlyRevenue: monthlyRevenueAgg._sum.amount ?? 0,
+        rentDue: rentDueAgg._sum.amount ?? 0,
+        leaseExpiring,
+        maintenanceRequests,
+        recentMoveOuts,
         totalUsers,
-        totalRooms,
         totalLandlords,
         totalTenants,
         totalBookings,
-        totalRevenue: totalRevenue._sum.amount || 0,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Get admin stats error:", error);
-    return res.status(500).json({ success: false, message: "Something went wrong" });
+    return res.status(500).json({ success: false, message: "Failed to fetch admin dashboard stats", error: error.message });
   }
 };

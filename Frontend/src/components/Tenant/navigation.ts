@@ -16,7 +16,7 @@ export type TenantView =
 // Maps each Sidebar nav label to the view it should open.
 export const NAV_LABEL_TO_VIEW: Record<NavLabel, TenantView> = {
   "Dashboard": "dashboard",
-  "Find Rooms": "search",
+  "Find Property": "search",
   "Saved Rooms": "saved",
   "My Requests": "requests",
   "Current Rental": "rental",

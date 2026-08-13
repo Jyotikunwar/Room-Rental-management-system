@@ -1,16 +1,15 @@
 import prisma from "../lib/prisma";
+import { calculateCosineSimilarity } from "../utils/cosineSimilarity";
+import { calculatePopularityScore } from "../utils/popularityRanking";
+import { roomToVector, preferencesToVector, STANDARD_AMENITIES } from "../utils/vectorizer";
 
-// Standard set of amenities to track for vectorization
-const STANDARD_AMENITIES = [
-  "wifi",
-  "parking",
-  "water",
-  "balcony",
-  "kitchen",
-  "attached bathroom",
-  "air conditioner",
-  "furnished",
-];
+export {
+  calculateCosineSimilarity,
+  calculatePopularityScore,
+  roomToVector,
+  preferencesToVector,
+  STANDARD_AMENITIES,
+};
 
 export interface RoomWithRelations {
   id: number;
@@ -23,71 +22,6 @@ export interface RoomWithRelations {
   reviews: { rating: number }[];
   favorites: { id: number }[];
   [key: string]: any;
-}
-
-/**
- * 1. Hardcoded Cosine Similarity Math Algorithm
- * Formula: Cosine Similarity(A, B) = (A . B) / (||A|| * ||B||)
- */
-export function calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (vecA.length !== vecB.length || vecA.length === 0) return 0;
-
-  let dotProduct = 0;
-  let magnitudeA = 0;
-  let magnitudeB = 0;
-
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    magnitudeA += vecA[i] * vecA[i];
-    magnitudeB += vecB[i] * vecB[i];
-  }
-
-  magnitudeA = Math.sqrt(magnitudeA);
-  magnitudeB = Math.sqrt(magnitudeB);
-
-  if (magnitudeA === 0 || magnitudeB === 0) return 0;
-
-  return dotProduct / (magnitudeA * magnitudeB);
-}
-
-/**
- * 2. Vectorization Function
- * Converts a Room object into a normalized numerical feature vector:
- * [ NormalizedPrice, IsSingle, IsDouble, IsFlat, IsApartment, ...AmenitiesBinary ]
- */
-export function roomToVector(room: RoomWithRelations, maxPrice: number = 50000): number[] {
-  // A. Price Normalization (0.0 to 1.0)
-  const normalizedPrice = Math.min(room.price / maxPrice, 1.0);
-
-  // B. Room Type One-Hot Encoding
-  const isSingle = room.roomType === "SINGLE" ? 1 : 0;
-  const isDouble = room.roomType === "DOUBLE" ? 1 : 0;
-  const isFlat = room.roomType === "FLAT" ? 1 : 0;
-  const isApartment = room.roomType === "APARTMENT" ? 1 : 0;
-
-  // C. Amenities Binary Vector
-  const roomAmenityNames = room.roomAmenities.map((ra) => ra.amenity.name.toLowerCase());
-  const amenityVector = STANDARD_AMENITIES.map((amenity) =>
-    roomAmenityNames.some((name) => name.includes(amenity)) ? 1 : 0
-  );
-
-  return [normalizedPrice, isSingle, isDouble, isFlat, isApartment, ...amenityVector];
-}
-
-/**
- * 3. Popularity & Rating Score Calculation (0.0 to 1.0)
- */
-export function calculatePopularityScore(room: RoomWithRelations): number {
-  const avgRating =
-    room.reviews && room.reviews.length > 0
-      ? room.reviews.reduce((acc, r) => acc + r.rating, 0) / room.reviews.length
-      : 0;
-
-  const normalizedRating = avgRating / 5.0; // 0.0 to 1.0
-  const favoriteCount = room.favorites ? room.favorites.length : 0;
-  const normalizedFavorites = Math.min(favoriteCount / 20.0, 1.0); // capped at 20 favorites
-
-  return 0.7 * normalizedRating + 0.3 * normalizedFavorites;
 }
 
 /**
@@ -157,3 +91,255 @@ export const getSimilarRoomRecommendations = async (targetRoomId: number, limit:
 
   return scoredRooms.slice(0, limit);
 };
+
+/**
+ * 5. Personalized Recommendation Engine based on explicit Tenant Preferences
+ * Compares tenant preference vector (price, room type, requested amenities) against available rooms.
+ */
+export interface TenantPreferences {
+  preferredPrice?: number;
+  preferredRoomType?: string;
+  preferredAmenities?: string[];
+  city?: string;
+}
+
+
+
+export const getPersonalizedRecommendations = async (
+  prefs: TenantPreferences,
+  limit: number = 10
+) => {
+  const rooms = await prisma.room.findMany({
+    where: {
+      status: "AVAILABLE",
+      ...(prefs.city ? { city: { equals: prefs.city, mode: "insensitive" } } : {}),
+    },
+    include: {
+      roomImages: true,
+      roomAmenities: { include: { amenity: true } },
+      reviews: true,
+      favorites: true,
+      landlord: { select: { id: true, fullName: true, phone: true } },
+    },
+  });
+
+  if (rooms.length === 0) return [];
+
+  const maxPrice = Math.max(...rooms.map((r) => r.price), 50000);
+  const prefVector = preferencesToVector(prefs, maxPrice);
+
+  const hasExplicitPrefs =
+    prefs.preferredPrice !== undefined ||
+    prefs.preferredRoomType !== undefined ||
+    (prefs.preferredAmenities && prefs.preferredAmenities.length > 0);
+
+  const scoredRooms = rooms.map((room) => {
+    const rVector = roomToVector(room, maxPrice);
+    const cosineSimilarity = hasExplicitPrefs
+      ? calculateCosineSimilarity(prefVector, rVector)
+      : 0;
+    const popularityScore = calculatePopularityScore(room);
+
+    // If tenant provided preferences, weight Cosine Similarity higher (70% Cosine, 30% Popularity).
+    // If new user / no preferences, weight Popularity 100%.
+    const finalScore = hasExplicitPrefs
+      ? 0.7 * cosineSimilarity + 0.3 * popularityScore
+      : popularityScore;
+
+    return {
+      room,
+      similarityScore: Math.round(cosineSimilarity * 100) / 100,
+      popularityScore: Math.round(popularityScore * 100) / 100,
+      finalScore: Math.round(finalScore * 100) / 100,
+    };
+  });
+
+  scoredRooms.sort((a, b) => b.finalScore - a.finalScore);
+
+  return scoredRooms.slice(0, limit);
+};
+
+/**
+ * Popular room recommendations — ranked by rating + favorite count.
+ * Tries unsaved available rooms first, then all available, then any room in the DB.
+ */
+export const getPopularRoomRecommendations = async (
+  limit: number = 6,
+  excludeRoomIds: number[] = []
+) => {
+  const include = {
+    roomImages: true,
+    roomAmenities: { include: { amenity: true } },
+    reviews: true,
+    favorites: true,
+    landlord: { select: { id: true, fullName: true, phone: true } },
+  };
+
+  const scoreRooms = (rooms: Parameters<typeof calculatePopularityScore>[0][]) =>
+    rooms
+      .map((room) => {
+        const popularityScore = calculatePopularityScore(room);
+        return {
+          room,
+          similarityScore: 0,
+          popularityScore,
+          finalScore: popularityScore,
+        };
+      })
+      .sort((a, b) => b.finalScore - a.finalScore)
+      .slice(0, limit);
+
+  const excluded = [...new Set(excludeRoomIds.filter((id) => id > 0))];
+
+  if (excluded.length > 0) {
+    const unsavedAvailable = await prisma.room.findMany({
+      where: { status: "AVAILABLE", id: { notIn: excluded } },
+      include,
+    });
+    if (unsavedAvailable.length > 0) return scoreRooms(unsavedAvailable);
+  }
+
+  const available = await prisma.room.findMany({
+    where: { status: "AVAILABLE" },
+    include,
+  });
+  if (available.length > 0) return scoreRooms(available);
+
+  const anyRooms = await prisma.room.findMany({ include, take: Math.max(limit * 2, 12) });
+  return scoreRooms(anyRooms);
+};
+
+/**
+ * Content-Based Recommendations based on Saved/Favorite Rooms.
+ * Builds an aggregate feature vector from the tenant's saved rooms,
+ * then ranks available rooms by cosine similarity (70%) + popularity (30%).
+ * Returns an empty array when the tenant has no saved rooms.
+ */
+export const getSavedRoomsContentBasedRecommendations = async (
+  tenantId: number,
+  limit: number = 6
+) => {
+  const userFavorites = await prisma.favorite.findMany({
+    where: { userId: tenantId },
+    include: {
+      room: {
+        include: {
+          roomAmenities: { include: { amenity: true } },
+          reviews: true,
+          favorites: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const validFavorites = userFavorites.filter((f) => f?.room);
+  if (validFavorites.length === 0) {
+    return [];
+  }
+
+  const savedRoomIds = validFavorites.map((f) => f.roomId);
+  const candidateRooms = await prisma.room.findMany({
+    where: {
+      id: { notIn: savedRoomIds },
+      status: "AVAILABLE",
+    },
+    include: {
+      roomImages: true,
+      roomAmenities: { include: { amenity: true } },
+      reviews: true,
+      favorites: true,
+      landlord: { select: { id: true, fullName: true, phone: true } },
+    },
+  });
+
+  if (candidateRooms.length === 0) return [];
+
+  const maxPrice = Math.max(
+    ...validFavorites.map((f) => f.room.price || 0),
+    ...candidateRooms.map((r) => r.price || 0),
+    50000
+  );
+
+  const vectors = validFavorites.map((f) => roomToVector(f.room, maxPrice));
+  const vectorDim = vectors[0].length;
+  const userProfileVector: number[] = new Array(vectorDim).fill(0);
+
+  for (let i = 0; i < vectorDim; i++) {
+    let sum = 0;
+    for (let j = 0; j < vectors.length; j++) {
+      sum += vectors[j][i];
+    }
+    userProfileVector[i] = sum / vectors.length;
+  }
+
+  const scoredRooms = candidateRooms.map((candidate) => {
+    const candidateVector = roomToVector(candidate, maxPrice);
+    const cosineSimilarity = calculateCosineSimilarity(userProfileVector, candidateVector);
+    const popularityScore = calculatePopularityScore(candidate);
+    const finalScore = 0.7 * cosineSimilarity + 0.3 * popularityScore;
+
+    return {
+      room: candidate,
+      similarityScore: Math.round(cosineSimilarity * 100) / 100,
+      popularityScore: Math.round(popularityScore * 100) / 100,
+      finalScore: Math.round(finalScore * 100) / 100,
+    };
+  });
+
+  scoredRooms.sort((a, b) => b.finalScore - a.finalScore);
+  return scoredRooms.slice(0, limit);
+};
+
+/**
+ * Dashboard recommendation resolver:
+ * 1. Cosine similarity from saved rooms (if any saves exist)
+ * 2. Similar rooms to most recently saved (if cosine has no candidates)
+ * 3. Popular rooms (unsaved first, then broader fallbacks)
+ */
+export const resolveDashboardRecommendations = async (
+  tenantId: number,
+  limit: number = 6
+): Promise<{ recommendations: Awaited<ReturnType<typeof getPopularRoomRecommendations>>; source: "cosine" | "popular" }> => {
+  const favorites = await prisma.favorite.findMany({
+    where: { userId: tenantId },
+    include: {
+      room: {
+        include: {
+          roomAmenities: { include: { amenity: true } },
+          reviews: true,
+          favorites: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const savedRoomIds = favorites.map((f) => f.roomId);
+  const validFavorites = favorites.filter((f) => f?.room);
+
+  if (validFavorites.length > 0) {
+    const contentBased = await getSavedRoomsContentBasedRecommendations(tenantId, limit);
+    if (contentBased.length > 0) {
+      return { recommendations: contentBased, source: "cosine" };
+    }
+
+    for (const fav of validFavorites) {
+      try {
+        const similar = await getSimilarRoomRecommendations(fav.roomId, limit + savedRoomIds.length);
+        const filtered = similar
+          .filter((r) => r.room?.id && !savedRoomIds.includes(r.room.id))
+          .slice(0, limit);
+        if (filtered.length > 0) {
+          return { recommendations: filtered, source: "cosine" };
+        }
+      } catch {
+        // try next saved room
+      }
+    }
+  }
+
+  const popular = await getPopularRoomRecommendations(limit, savedRoomIds);
+  return { recommendations: popular, source: "popular" };
+};
+

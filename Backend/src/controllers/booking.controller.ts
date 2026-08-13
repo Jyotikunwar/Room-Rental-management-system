@@ -16,6 +16,16 @@ export const createBooking = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Check if tenant has updated and completed their profile before booking
+    const tenantUser = await prisma.user.findUnique({ where: { id: tenantId } });
+    if (!tenantUser?.fullName || !tenantUser?.avatarUrl || !tenantUser?.idType || !tenantUser?.idNumber || !tenantUser?.idDocumentUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile incomplete! Please update your Profile Information (Full Name & Profile Picture) and complete Identity Verification in Settings before booking a room.",
+        requiresProfileUpdate: true,
+      });
+    }
+
     const room = await prisma.room.findUnique({
       where: { id: Number(roomId) },
     });
@@ -201,6 +211,22 @@ export const updateBookingStatus = async (req: AuthRequest, res: Response) => {
           data: { status: "AVAILABLE" },
         });
       }
+    }
+
+    // Create notification for tenant
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: booking.tenantId,
+          title: status === "APPROVED" ? "Booking Request Approved! 🎉" : "Booking Request Status Updated",
+          message: status === "APPROVED"
+            ? `Your booking request for "${updatedBooking.room.title}" has been accepted by the landlord!`
+            : `Your booking request for "${updatedBooking.room.title}" was ${status.toLowerCase()}.`,
+          type: "BOOKING",
+        },
+      });
+    } catch (notifErr) {
+      console.error("Failed to create tenant booking notification:", notifErr);
     }
 
     return res.status(200).json({
