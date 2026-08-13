@@ -1092,8 +1092,15 @@ uploadIdDocument: async (formData: FormData) => {
   });
   return res.json();
 },
-getConversations: async () => {
+  getConversations: async () => {
     const res = await fetch(`${API_BASE_URL}/messages/conversations`, {
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+  getMessageContacts: async (params?: { search?: string; role?: string }) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetch(`${API_BASE_URL}/messages/contacts?${query}`, {
       headers: getAuthHeaders(),
     });
     return res.json();
