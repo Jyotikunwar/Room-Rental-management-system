@@ -301,11 +301,28 @@ export interface AdminActivityEntry {
 }
 
 export interface LandlordActivityEntry {
-  id: number;
-  category: "MESSAGE" | "PAYMENT" | "MAINTENANCE" | "SYSTEM";
+  id: string | number;
+  category: "MESSAGE" | "PAYMENT" | "MAINTENANCE" | "PROPERTY" | "TENANT" | "SYSTEM";
   title: string;
   description: string;
   createdAt: string;
+  status?: string;
+  metadata?: {
+    targetRoute?: string;
+    roomId?: number;
+    bookingId?: number;
+    paymentId?: number;
+    complaintId?: number;
+    tenantId?: number;
+    tenantName?: string;
+    tenantEmail?: string;
+    contactId?: number;
+    contactName?: string;
+    roomTitle?: string;
+    amount?: number;
+    actionText?: string;
+    [key: string]: any;
+  };
 }
 
 // NOTE: Admin inbox backed by Message model + admin-only routes.
@@ -822,9 +839,9 @@ export const api = {
   },
 
   // Landlord — activity feed still not built (see LandlordActivityEntry note).
-  getLandlordActivity: async (params?: { category?: string; page?: number }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await fetch(`${API_BASE_URL}/landlord/activity?${query}`, { headers: getAuthHeaders() });
+  getLandlordActivity: async (params?: { category?: string; search?: string; page?: number; limit?: number }) => {
+    const query = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    const res = await fetch(`${API_BASE_URL}/landlord/activity${query}`, { headers: getAuthHeaders() });
     return res.json();
   },
   // NOTE: platform fee concept still not built — no model, no billing logic.
