@@ -241,10 +241,6 @@ function MaintenanceCard({ rental, onNewRequest }: { rental: Booking; onNewReque
 }
 
 function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
-  const [payingMethod, setPayingMethod] = useState<Payment["paymentMethod"]>("CASH");
-  const [paying, setPaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   if (!payment) {
     return (
       <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
@@ -260,20 +256,6 @@ function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
   const days = daysUntil(payment.createdAt);
   const isUrgent = days <= 5;
 
-  const handlePay = async () => {
-    setPaying(true);
-    setError(null);
-    try {
-      const res = await api.createPayment(payment.bookingId, payingMethod);
-      if (res.success === false) throw new Error(res.message || "Payment failed.");
-      window.location.reload(); // simplest way to reflect the new PAID status everywhere
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed.");
-    } finally {
-      setPaying(false);
-    }
-  };
-
   return (
     <div className={`rounded-2xl border p-4 sm:p-5 ${isUrgent ? "border-amber-200 bg-amber-50" : "border-stone-200 bg-white"}`}>
       <div className="flex items-center gap-2">
@@ -286,20 +268,6 @@ function PaymentDueCard({ payment }: { payment: Payment | undefined }) {
         {isUrgent && <AlertTriangle size={11} className="mr-1 inline" />}
         Status: {payment.status}
       </p>
-
-      {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
-
-      <select
-        value={payingMethod}
-        onChange={(e) => setPayingMethod(e.target.value as Payment["paymentMethod"])}
-        className="mt-3 w-full rounded-lg border border-stone-200 px-2.5 py-2 text-xs text-stone-600 outline-none"
-      >
-        <option value="CASH">Cash</option>
-      </select>
-
-      <button onClick={handlePay} disabled={paying} className="mt-3 w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60">
-        {paying ? "Processing..." : "Pay via Cash"}
-      </button>
     </div>
   );
 }

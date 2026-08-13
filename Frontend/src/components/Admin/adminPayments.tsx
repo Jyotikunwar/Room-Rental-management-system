@@ -534,7 +534,7 @@ export default function AdminPayments({ user: _user, onLogout, activeRoute, onNa
 
                   <div className="flex items-center justify-between pt-2 border-t border-gray-100 gap-2">
                     <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
-                      {tx.paymentMethodLabel || "Payment"}
+                      Cash
                     </span>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -610,7 +610,7 @@ export default function AdminPayments({ user: _user, onLogout, activeRoute, onNa
                             Rs. {tx.amount.toLocaleString()}
                           </td>
                           <td className="py-3.5 pr-4 text-xs font-semibold text-gray-600">
-                            {tx.paymentMethodLabel || "Online"}
+                            Cash
                           </td>
                           <td className="py-3.5 pr-4 text-xs text-gray-500 font-medium">
                             {new Date(tx.date).toLocaleDateString()}
@@ -910,7 +910,7 @@ export default function AdminPayments({ user: _user, onLogout, activeRoute, onNa
               </div>
               <div className="flex justify-between py-1 border-b border-gray-100">
                 <span className="text-gray-400 font-medium">Payment Channel:</span>
-                <span className="font-semibold text-gray-800">{selectedReceipt.paymentMethodLabel || "Online Transfer"}</span>
+                <span className="font-semibold text-gray-800">Cash</span>
               </div>
             </div>
 

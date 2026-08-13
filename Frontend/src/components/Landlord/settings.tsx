@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  Bell, User as UserIcon, Lock, CreditCard,
-  Trash2, Camera, Check, Plus, ShieldCheck, Upload, AlertTriangle, Loader2,
-  Landmark, Wallet, X,
+  Bell, User as UserIcon, Lock,
+  Trash2, Camera, Check, ShieldCheck, Upload, AlertTriangle, Loader2,
 } from "lucide-react";
-import { api, type User, type PaymentMethod } from "../../services/api";
+import { api, type User } from "../../services/api";
 import LandlordSidebar, { type LandlordRoute } from "./sidebar";
 import EnterLocationSection from "../Tenant/EnterLocationSection";
 import Avatar from "../Avatar";
@@ -17,16 +16,7 @@ interface LandlordSettingsProps {
   onUserUpdate?: (user: User) => void;
 }
 
-const METHOD_ICON: Record<PaymentMethod["type"], typeof Landmark> = {
-  ESEWA: Wallet,
-  KHALTI: Wallet,
-  BANK: Wallet,
-  CASH: Wallet,
-};
 
-const METHOD_TYPES: { value: PaymentMethod["type"]; label: string }[] = [
-  { value: "CASH", label: "Cash" },
-];
 
 type IdType = "CITIZENSHIP" | "PASSPORT" | "NATIONAL_ID" | "DRIVING_LICENSE";
 
@@ -98,32 +88,6 @@ export default function LandlordSettings({ user, onLogout, activeRoute, onNaviga
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
-  const [methodsLoading, setMethodsLoading] = useState(true);
-  const [methodsError, setMethodsError] = useState<string | null>(null);
-  const [methodBusyId, setMethodBusyId] = useState<number | null>(null);
-  const [addMethodOpen, setAddMethodOpen] = useState(false);
-  const [newMethodType, setNewMethodType] = useState<PaymentMethod["type"]>("CASH");
-  const [newMethodLabel, setNewMethodLabel] = useState("");
-  const [newMethodDetail, setNewMethodDetail] = useState("");
-  const [addingMethod, setAddingMethod] = useState(false);
-
-  const loadMethods = () => {
-    setMethodsLoading(true);
-    api
-      .getPaymentMethods()
-      .then((res) => {
-        if (res.success === false) throw new Error(res.message || "Couldn't load payment methods.");
-        setMethods(res.methods ?? []);
-      })
-      .catch((err) => setMethodsError(err instanceof Error ? err.message : "Couldn't load payment methods."))
-      .finally(() => setMethodsLoading(false));
-  };
-
-  useEffect(() => {
-    loadMethods();
-  }, []);
-
   useEffect(() => {
     if (!idType && !idNumber) {
       setIdFieldError(null);
@@ -131,54 +95,6 @@ export default function LandlordSettings({ user, onLogout, activeRoute, onNaviga
     }
     setIdFieldError(validateIdNumber(idType, idNumber));
   }, [idType, idNumber]);
-
-  const handleAddMethod = async () => {
-    if (!newMethodLabel.trim()) return;
-    setAddingMethod(true);
-    try {
-      const res = await api.addPaymentMethod({
-        type: newMethodType,
-        label: newMethodLabel.trim(),
-        detail: newMethodDetail.trim() || undefined,
-      });
-      if (res.success === false) throw new Error(res.message || "Couldn't add payment method.");
-      setMethods((prev) => [...prev.map((m) => ({ ...m, isDefault: res.method.isDefault ? false : m.isDefault })), res.method]);
-      setAddMethodOpen(false);
-      setNewMethodLabel("");
-      setNewMethodDetail("");
-      setNewMethodType("CASH");
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't add payment method.");
-    } finally {
-      setAddingMethod(false);
-    }
-  };
-
-  const handleSetDefault = async (id: number) => {
-    setMethodBusyId(id);
-    try {
-      const res = await api.setDefaultPaymentMethod(id);
-      if (res.success === false) throw new Error(res.message || "Couldn't set default.");
-      setMethods((prev) => prev.map((m) => ({ ...m, isDefault: m.id === id })));
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't set default.");
-    } finally {
-      setMethodBusyId(null);
-    }
-  };
-
-  const handleDeleteMethod = async (id: number) => {
-    setMethodBusyId(id);
-    try {
-      const res = await api.deletePaymentMethod(id);
-      if (res.success === false) throw new Error(res.message || "Couldn't remove payment method.");
-      setMethods((prev) => prev.filter((m) => m.id !== id));
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't remove payment method.");
-    } finally {
-      setMethodBusyId(null);
-    }
-  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -551,126 +467,6 @@ export default function LandlordSettings({ user, onLogout, activeRoute, onNaviga
               {passwordSaving && <Loader2 size={12} className="animate-spin" />}
               Update Password
             </button>
-          </section>
-
-          {/* ---- Payment methods ---- */}
-          <section className="mb-6 rounded-2xl border border-stone-200 bg-white p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <CreditCard size={16} className="text-blue-600" />
-              <h3 className="text-sm font-semibold">Payment Methods</h3>
-            </div>
-
-            {methodsLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 size={16} className="animate-spin text-stone-400" />
-              </div>
-            ) : methodsError ? (
-              <p className="py-3 text-xs text-rose-600">{methodsError}</p>
-            ) : (
-              <>
-                {methods.length === 0 ? (
-                  <p className="py-3 text-xs text-stone-400">No payment methods added yet.</p>
-                ) : (
-                  <div className="flex flex-col divide-y divide-stone-100">
-                    {methods.map((m) => {
-                      const Icon = METHOD_ICON[m.type];
-                      return (
-                        <div key={m.id} className="flex items-center justify-between gap-3 py-2.5">
-                          <div className="flex items-center gap-2.5">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                              <Icon size={14} />
-                            </span>
-                            <div>
-                              <p className="flex items-center gap-1.5 text-sm font-medium text-stone-800">
-                                {m.label}
-                                {m.isDefault && (
-                                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
-                                    Default
-                                  </span>
-                                )}
-                              </p>
-                              {m.detail && <p className="text-xs text-stone-500">{m.detail}</p>}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-3">
-                            {methodBusyId === m.id ? (
-                              <Loader2 size={13} className="animate-spin text-stone-400" />
-                            ) : (
-                              <>
-                                {!m.isDefault && (
-                                  <button
-                                    onClick={() => handleSetDefault(m.id)}
-                                    className="text-xs font-medium text-blue-600 hover:underline"
-                                  >
-                                    Set Default
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteMethod(m.id)}
-                                  className="text-stone-400 hover:text-rose-500"
-                                  aria-label="Remove payment method"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {!addMethodOpen ? (
-                  <button
-                    onClick={() => setAddMethodOpen(true)}
-                    className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
-                  >
-                    <Plus size={13} /> Add another payment method
-                  </button>
-                ) : (
-                  <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50/60 p-3.5">
-                    <div className="mb-2.5 flex items-center justify-between">
-                      <p className="text-xs font-semibold text-stone-700">New Payment Method</p>
-                      <button onClick={() => setAddMethodOpen(false)} className="text-stone-400 hover:text-stone-600">
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                      <select
-                        value={newMethodType}
-                        onChange={(e) => setNewMethodType(e.target.value as PaymentMethod["type"])}
-                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none"
-                      >
-                        {METHOD_TYPES.map((t) => (
-                          <option key={t.value} value={t.value}>{t.label}</option>
-                        ))}
-                      </select>
-                      <input
-                        value={newMethodLabel}
-                        onChange={(e) => setNewMethodLabel(e.target.value)}
-                        placeholder="Label (e.g. My eSewa)"
-                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none"
-                      />
-                      <input
-                        value={newMethodDetail}
-                        onChange={(e) => setNewMethodDetail(e.target.value)}
-                        placeholder="Detail (e.g. 98XXXXXX21) — optional"
-                        className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none sm:col-span-2"
-                      />
-                    </div>
-                    <button
-                      onClick={handleAddMethod}
-                      disabled={addingMethod || !newMethodLabel.trim()}
-                      className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-stone-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-60"
-                    >
-                      {addingMethod && <Loader2 size={12} className="animate-spin" />}
-                      Add Method
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
           </section>
 
           {/* ---- Danger zone ---- */}

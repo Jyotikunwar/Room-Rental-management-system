@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Bell, HelpCircle, AlertTriangle, Search, Download,
-  FileText, ClipboardList, ShieldCheck, Landmark, Smartphone,
-  CheckCircle2, Loader2, X, Banknote,
+  FileText, ClipboardList, ShieldCheck, Loader2,
 } from "lucide-react";
 import type { User, Payment, TenantDashboardData } from "../../services/api";
 import { api } from "../../services/api";
@@ -24,17 +23,10 @@ const STATUS_STYLE: Record<Payment["status"], string> = {
   REFUNDED: "bg-blue-50 text-blue-600",
 };
 
-const METHOD_ICON: Record<Payment["paymentMethod"], typeof Landmark> = {
-  BANK: Landmark,
-  ESEWA: Smartphone,
-  KHALTI: Smartphone,
-  CASH: Banknote,
-};
-
 const METHOD_LABEL: Record<Payment["paymentMethod"], string> = {
-  BANK: "Bank Transfer",
-  ESEWA: "eSewa",
-  KHALTI: "Khalti",
+  BANK: "Cash",
+  ESEWA: "Cash",
+  KHALTI: "Cash",
   CASH: "Cash",
 };
 
@@ -51,11 +43,6 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-
-  const [payModalOpen, setPayModalOpen] = useState(false);
-  const [payMethod, setPayMethod] = useState<Payment["paymentMethod"]>("CASH");
-  const [paying, setPaying] = useState(false);
-  const [payError, setPayError] = useState<string | null>(null);
 
   const loadData = () => {
     setLoading(true);
@@ -94,37 +81,11 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
   const pendingDues = payments.filter((p) => p.status === "PENDING").reduce((sum, p) => sum + p.amount, 0);
 
   const activeRental = dashboard?.activeRental ?? null;
-  // NOTE: the shared Room interface in services/api.ts doesn't expose securityDeposit
-  // yet even though the Prisma model has it — add it there for a typed value here.
   const securityDeposit = (activeRental?.room as unknown as { securityDeposit?: number } | undefined)?.securityDeposit ?? null;
 
   const nextPaymentDue = activeRental?.totalAmount ?? null;
   const nextPaymentDate = dashboard?.stats.nextPaymentDate ?? null;
   const actionRequired = (dashboard?.stats.rentDueInDays ?? null) !== null && (dashboard?.stats.rentDueInDays ?? 99) <= 7;
-
-  const openPayModal = () => {
-    setPayError(null);
-    setPayModalOpen(true);
-  };
-
-  const submitPayment = async () => {
-    if (!activeRental) return;
-    setPaying(true);
-    setPayError(null);
-    try {
-      const res = await api.createPayment(activeRental.id, payMethod);
-      if (res.success) {
-        setPayModalOpen(false);
-        loadData();
-      } else {
-        setPayError(res.message || "Payment failed. Please try again.");
-      }
-    } catch {
-      setPayError("Payment failed. Please try again.");
-    } finally {
-      setPaying(false);
-    }
-  };
 
   return (
     <div className="flex min-h-screen w-full bg-[#F4F6FB] text-stone-900">
@@ -176,12 +137,6 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
                     <p className="mt-3 text-3xl font-bold text-stone-900 sm:text-4xl">
                       Rs. {nextPaymentDue.toLocaleString()}
                     </p>
-                    <button
-                      onClick={openPayModal}
-                      className="mt-4 rounded-lg bg-stone-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-stone-800"
-                    >
-                      Pay Now
-                    </button>
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center">
@@ -284,49 +239,6 @@ export default function PaymentsPage({ user, onLogout, onNavigate }: PaymentsPro
         </div>
       </div>
 
-      {/* Pay Now modal */}
-      {payModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setPayModalOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Choose payment method</h3>
-              <button onClick={() => setPayModalOpen(false)} className="text-stone-400 hover:text-stone-600">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="mb-4 flex flex-col gap-2">
-              {(["CASH"] as Payment["paymentMethod"][]).map((m) => {
-                const Icon = METHOD_ICON[m];
-                return (
-                  <button
-                    key={m}
-                    onClick={() => setPayMethod(m)}
-                    className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
-                      payMethod === m ? "border-blue-600 bg-blue-50" : "border-stone-200 hover:bg-stone-50"
-                    }`}
-                  >
-                    <Icon size={16} className="text-stone-500" />
-                    {METHOD_LABEL[m]}
-                    {payMethod === m && <CheckCircle2 size={15} className="ml-auto text-blue-600" />}
-                  </button>
-                );
-              })}
-            </div>
-
-            {payError && <p className="mb-3 text-xs font-medium text-rose-600">{payError}</p>}
-
-            <button
-              onClick={submitPayment}
-              disabled={paying}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60"
-            >
-              {paying && <Loader2 size={15} className="animate-spin" />}
-              {paying ? "Processing..." : `Pay Rs. ${nextPaymentDue?.toLocaleString() ?? ""}`}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
