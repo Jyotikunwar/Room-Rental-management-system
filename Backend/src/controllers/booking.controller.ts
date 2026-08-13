@@ -203,6 +203,22 @@ export const updateBookingStatus = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Create notification for tenant
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: booking.tenantId,
+          title: status === "APPROVED" ? "Booking Request Approved! 🎉" : "Booking Request Status Updated",
+          message: status === "APPROVED"
+            ? `Your booking request for "${updatedBooking.room.title}" has been accepted by the landlord!`
+            : `Your booking request for "${updatedBooking.room.title}" was ${status.toLowerCase()}.`,
+          type: "BOOKING",
+        },
+      });
+    } catch (notifErr) {
+      console.error("Failed to create tenant booking notification:", notifErr);
+    }
+
     return res.status(200).json({
       success: true,
       message: `Booking status updated to ${status}`,
