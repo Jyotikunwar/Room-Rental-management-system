@@ -460,7 +460,6 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
   const [editError, setEditError] = useState<string | null>(null);
 
   const [form, setForm] = useState<PropertyForm>(EMPTY_FORM);
-  const [dragActive, setDragActive] = useState(false);
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -545,6 +544,27 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
     setEditForm(EMPTY_FORM);
     setEditNewFiles([]);
     setEditError(null);
+  }
+
+  async function handleDeleteUploadedImage(imageId: number) {
+    if (!window.confirm("Remove this image?")) return;
+    try {
+      const res = await api.deleteRoomImage(imageId);
+      if (res.success) {
+        setRooms((prevRooms) =>
+          prevRooms.map((r) =>
+            r.id === editingRoomId
+              ? { ...r, roomImages: (r.roomImages || []).filter((img) => img.id !== imageId) }
+              : r
+          )
+        );
+      } else {
+        alert(res.message || "Failed to remove image.");
+      }
+    } catch (e) {
+      console.error("Failed to delete image:", e);
+      alert("Failed to remove image.");
+    }
   }
 
   async function handleUpdateProperty(e: React.FormEvent) {
@@ -1004,8 +1024,29 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                   <label className="mb-2 block text-xs font-medium text-gray-600">Property Pictures</label>
                   <div className="flex flex-wrap gap-3">
                     {(rooms.find((r) => r.id === editingRoomId)?.roomImages || []).map((img) => (
-                      <div key={img.id} className="h-16 w-16 overflow-hidden rounded-lg border border-gray-200">
+                      <div key={img.id} className="relative h-16 w-16 overflow-hidden rounded-lg border border-gray-200 group">
                         <img src={resolveImageUrl(img.imageUrl)} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUploadedImage(img.id)}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-900/80 text-white hover:bg-rose-600 transition-colors shadow"
+                          title="Remove picture"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    {editNewFiles.map((file, idx) => (
+                      <div key={`new-${idx}`} className="relative h-16 w-16 overflow-hidden rounded-lg border border-blue-200 bg-blue-50/40">
+                        <img src={URL.createObjectURL(file)} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setEditNewFiles((prev) => prev.filter((_, i) => i !== idx))}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-900/80 text-white hover:bg-rose-600 transition-colors shadow"
+                          title="Remove new picture"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
                     ))}
                     <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-gray-200 text-gray-400 hover:border-gray-400">
@@ -1119,21 +1160,32 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
 
               <div>
                 <label className="mb-2 block text-xs font-medium text-gray-600">Property Pictures</label>
-                <label
-                  onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFiles(e.dataTransfer.files); }}
-                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors sm:py-10 ${
-                    dragActive ? "border-gray-900 bg-gray-50" : "border-gray-200"
-                  }`}
-                >
-                  <UploadCloud size={22} className="text-gray-400" />
-                  <p className="text-sm text-gray-500">
-                    Drag and drop images here, or <span className="font-medium text-blue-600">browse</span>
-                  </p>
-                  <p className="text-xs text-gray-400">Supports JPG, PNG (Max 5MB each)</p>
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-                </label>
+                <div className="flex flex-wrap gap-3">
+                  {pickedFiles.map((file, idx) => (
+                    <div key={`picked-${idx}`} className="relative h-16 w-16 overflow-hidden rounded-lg border border-blue-200 bg-blue-50/40">
+                      <img src={URL.createObjectURL(file)} alt="" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setPickedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-900/80 text-white hover:bg-rose-600 transition-colors shadow"
+                        title="Remove picture"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <label className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-gray-200 text-gray-400 hover:border-gray-400">
+                    <UploadCloud size={16} />
+                    <span className="text-[9px]">Upload</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => handleFiles(e.target.files)}
+                    />
+                  </label>
+                </div>
                 {pickedFiles.length > 0 && (
                   <p className="mt-2 text-xs text-gray-500">{pickedFiles.length} image{pickedFiles.length === 1 ? "" : "s"} selected</p>
                 )}

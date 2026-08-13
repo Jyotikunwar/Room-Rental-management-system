@@ -562,6 +562,13 @@ export const api = {
     });
     return res.json();
   },
+  deleteRoomImage: async (imageId: number) => {
+    const res = await fetch(`${API_BASE_URL}/rooms/images/${imageId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
 
   // Recommendations
   getPersonalizedRecommendations: async (params?: Record<string, string | number>) => {

@@ -452,3 +452,33 @@ export const uploadRoomImages = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: "Failed to upload images" });
   }
 };
+
+// DELETE /rooms/images/:imageId (protected - owner or ADMIN, delete a specific room image)
+export const deleteRoomImage = async (req: AuthRequest, res: Response) => {
+  try {
+    const { imageId } = req.params;
+    const imgId = Number(imageId);
+
+    const image = await prisma.roomImage.findUnique({
+      where: { id: imgId },
+      include: { room: true },
+    });
+
+    if (!image) {
+      return res.status(404).json({ success: false, message: "Image not found" });
+    }
+
+    const isOwner = image.room.landlordId === req.user!.id;
+    const isAdmin = req.user!.role === "ADMIN";
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: "Not authorized to delete this image" });
+    }
+
+    await prisma.roomImage.delete({ where: { id: imgId } });
+
+    return res.status(200).json({ success: true, message: "Image deleted successfully" });
+  } catch (error) {
+    console.error("Delete room image error:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete image" });
+  }
+};
