@@ -597,15 +597,20 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
         furnishedDetails: editForm.furnishedDetails || undefined,
         status: editForm.status,
       });
+      let uploadSuccess = true;
       if (res.success && editNewFiles.length > 0) {
         const fd = new FormData();
         editNewFiles.forEach((f) => fd.append("images", f));
-        await api.uploadRoomImages(editingRoomId, fd);
+        const uploadRes = await api.uploadRoomImages(editingRoomId, fd);
+        if (!uploadRes.success) {
+          uploadSuccess = false;
+          setEditError(uploadRes.message || "Property updated, but failed to upload pictures.");
+        }
       }
-      if (res.success) {
-        handleCancelEdit();
+      if (res.success && uploadSuccess) {
+        setEditNewFiles([]);
         await loadRooms();
-      } else {
+      } else if (!res.success) {
         setEditError(res.message || "Couldn't update the property.");
       }
     } catch (e) {
@@ -666,15 +671,20 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
         furnishedDetails: form.furnishedDetails || undefined,
         status: form.status,
       });
+      let uploadSuccess = true;
       if (res.success && pickedFiles.length > 0 && res.room?.id) {
         const fd = new FormData();
         pickedFiles.forEach((f) => fd.append("images", f));
-        await api.uploadRoomImages(res.room.id, fd);
+        const uploadRes = await api.uploadRoomImages(res.room.id, fd);
+        if (!uploadRes.success) {
+          uploadSuccess = false;
+          setFormError(uploadRes.message || "Property created, but failed to upload pictures.");
+        }
       }
-      if (res.success) {
+      if (res.success && uploadSuccess) {
         handleReset();
         await loadRooms();
-      } else {
+      } else if (!res.success) {
         setFormError(res.message || "Couldn't create the property.");
       }
     } catch (e) {
@@ -1045,7 +1055,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                       <span className="text-[9px]">Upload</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,image/heic,image/heif,.heic,.heif,.webp,.svg,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.ico,.jfif"
                         multiple
                         className="hidden"
                         onChange={(e) => setEditNewFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
@@ -1170,7 +1180,7 @@ export default function LandlordProperties({ user, onLogout, activeRoute, onNavi
                     <span className="text-[9px]">Upload</span>
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,image/heic,image/heif,.heic,.heif,.webp,.svg,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.ico,.jfif"
                       multiple
                       className="hidden"
                       onChange={(e) => handleFiles(e.target.files)}

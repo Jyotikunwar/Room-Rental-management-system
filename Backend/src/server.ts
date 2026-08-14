@@ -52,6 +52,17 @@ app.use("/api/rent-invoices", rentInvoiceRoutes);
 
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/faqs", FaqRoutes);
+// Error handler middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message || "An error occurred during file processing",
+    });
+  }
+  next();
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
